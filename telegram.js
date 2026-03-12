@@ -54,8 +54,16 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function renderFlagHtmlSimple(team) {
-    const flag = team && team.flag ? team.flag : '🏳️';
-    return `<span class="flag-emoji">${flag}</span>`;
+    if (!team) return '<span class="flag-emoji">🏳️</span>';
+    const code =
+      (typeof FLAG_CODE_BY_TEAM_ID !== 'undefined' &&
+        FLAG_CODE_BY_TEAM_ID[team.id]) || null;
+    if (!code) {
+      const flag = team.flag || '🏳️';
+      return `<span class="flag-emoji">${flag}</span>`;
+    }
+    const url = `https://flagcdn.com/24x18/${code}.png`;
+    return `<img class="flag-img" src="${url}" alt="${team.name}" loading="lazy" />`;
   }
 
   function ensureNormalGroupOrder() {
@@ -196,38 +204,45 @@ document.addEventListener('DOMContentLoaded', () => {
 
     root.appendChild(container);
 
-    // Drag & drop внутри группы
-    let dragTeamId = null;
-    let dragGroupId = null;
+    // Перестановка команд тапами (удобно на телефоне, работает и с мышью)
+    let selectedTeamId = null;
+    let selectedGroupId = null;
 
     groupsGrid.querySelectorAll('.team-card').forEach((row) => {
-      row.addEventListener('dragstart', (e) => {
-        dragTeamId = row.dataset.teamId;
-        dragGroupId = row.dataset.groupId;
-        e.dataTransfer.effectAllowed = 'move';
-      });
-      row.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        row.classList.add('drag-over');
-      });
-      row.addEventListener('dragleave', () => {
-        row.classList.remove('drag-over');
-      });
-      row.addEventListener('drop', (e) => {
-        e.preventDefault();
-        row.classList.remove('drag-over');
-        const targetTeamId = row.dataset.teamId;
-        const targetGroupId = row.dataset.groupId;
-        if (!dragTeamId || !dragGroupId || dragGroupId !== targetGroupId) return;
-        if (dragTeamId === targetTeamId) return;
-        const arr = normalState.groupOrder[targetGroupId] || [];
-        const from = arr.indexOf(dragTeamId);
-        const to = arr.indexOf(targetTeamId);
-        if (from === -1 || to === -1) return;
-        arr.splice(from, 1);
-        arr.splice(to, 0, dragTeamId);
-        dragTeamId = null;
-        dragGroupId = null;
+      row.addEventListener('click', () => {
+        const teamId = row.dataset.teamId;
+        const groupId = row.dataset.groupId;
+
+        // первый тап — выбор
+        if (!selectedTeamId || selectedGroupId !== groupId || selectedTeamId === teamId) {
+          selectedTeamId = teamId;
+          selectedGroupId = groupId;
+
+          groupsGrid.querySelectorAll('.team-card').forEach((r) =>
+            r.classList.remove('team-card-selected')
+          );
+          row.classList.add('team-card-selected');
+          return;
+        }
+
+        // второй тап по другой команде в той же группе — обмен местами
+        const arr = normalState.groupOrder[groupId] || [];
+        const from = arr.indexOf(selectedTeamId);
+        const to = arr.indexOf(teamId);
+        if (from === -1 || to === -1) {
+          selectedTeamId = null;
+          selectedGroupId = null;
+          groupsGrid.querySelectorAll('.team-card').forEach((r) =>
+            r.classList.remove('team-card-selected')
+          );
+          return;
+        }
+        const tmp = arr[from];
+        arr[from] = arr[to];
+        arr[to] = tmp;
+
+        selectedTeamId = null;
+        selectedGroupId = null;
         renderNormalMode();
       });
     });

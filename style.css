@@ -368,7 +368,7 @@ button:active {
   display: flex;
   align-items: center;
   gap: 6px;
-  cursor: grab;
+  cursor: pointer;
 }
 
 .team-card .team-position {
@@ -381,6 +381,11 @@ button:active {
 .team-card.drag-over .standings-team {
   border: 1px solid var(--accent-soft-strong);
   background: var(--accent-soft);
+}
+
+.team-card-selected .standings-team {
+  border: 1px solid var(--accent);
+  background: rgba(34, 197, 94, 0.12);
 }
 
 .thirds-panel {
