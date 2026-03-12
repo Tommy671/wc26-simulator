@@ -32,6 +32,115 @@ body {
   color: var(--text);
 }
 
+.tg-screen {
+  min-height: 100vh;
+  padding: 16px 16px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tg-start-screen {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.tg-header {
+  text-align: left;
+}
+
+.tg-title {
+  margin: 0 0 4px;
+  font-size: 24px;
+}
+
+.tg-subtitle {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.tg-level-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.tg-level-card {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.9);
+  padding: 14px 14px 12px;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: transform 0.12s ease, box-shadow 0.12s ease,
+    border-color 0.12s ease, background 0.12s ease;
+}
+
+.tg-level-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.8);
+  border-color: var(--accent);
+  background: radial-gradient(circle at top left, #1f2937 0, #020617 55%);
+}
+
+.tg-level-card:active {
+  transform: translateY(0);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.9);
+}
+
+.tg-level-card-disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.tg-level-title {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.tg-level-subtitle {
+  font-size: 13px;
+  color: var(--accent);
+}
+
+.tg-level-description {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.tg-level-screen {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.tg-back-button {
+  align-self: flex-start;
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(15, 23, 42, 0.9);
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.tg-back-button:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.tg-hint {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
 .app {
   max-width: 1280px;
   margin: 0 auto;
