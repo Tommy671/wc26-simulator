@@ -42,6 +42,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const normalState = {
     groupOrder: {},
     bestThirds: [],
+    knockoutWinners: {},
+    lastQualKey: null,
   };
 
   function findTeamById(teamId) {
@@ -76,6 +78,313 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!Array.isArray(normalState.bestThirds)) {
       normalState.bestThirds = [];
     }
+  }
+
+  // --- Плей‑офф для нормального режима ---
+
+  const ROUND_OF_32_TEMPLATE_TG = [
+    {
+      id: 'R32-1',
+      home: { type: 'winner', groups: ['E'] },
+      away: { type: 'third', groups: ['A', 'B', 'C', 'D', 'F'] },
+    },
+    {
+      id: 'R32-2',
+      home: { type: 'winner', groups: ['I'] },
+      away: { type: 'third', groups: ['C', 'D', 'F', 'G', 'H'] },
+    },
+    {
+      id: 'R32-3',
+      home: { type: 'second', groups: ['A'] },
+      away: { type: 'second', groups: ['B'] },
+    },
+    {
+      id: 'R32-4',
+      home: { type: 'winner', groups: ['F'] },
+      away: { type: 'second', groups: ['C'] },
+    },
+    {
+      id: 'R32-5',
+      home: { type: 'second', groups: ['K'] },
+      away: { type: 'second', groups: ['L'] },
+    },
+    {
+      id: 'R32-6',
+      home: { type: 'winner', groups: ['H'] },
+      away: { type: 'second', groups: ['J'] },
+    },
+    {
+      id: 'R32-7',
+      home: { type: 'winner', groups: ['D'] },
+      away: { type: 'third', groups: ['B', 'E', 'F', 'I', 'J'] },
+    },
+    {
+      id: 'R32-8',
+      home: { type: 'winner', groups: ['G'] },
+      away: { type: 'third', groups: ['A', 'E', 'H', 'I', 'J'] },
+    },
+    {
+      id: 'R32-9',
+      home: { type: 'winner', groups: ['C'] },
+      away: { type: 'second', groups: ['F'] },
+    },
+    {
+      id: 'R32-10',
+      home: { type: 'second', groups: ['E'] },
+      away: { type: 'second', groups: ['I'] },
+    },
+    {
+      id: 'R32-11',
+      home: { type: 'winner', groups: ['A'] },
+      away: { type: 'third', groups: ['C', 'E', 'F', 'H', 'I'] },
+    },
+    {
+      id: 'R32-12',
+      home: { type: 'winner', groups: ['L'] },
+      away: { type: 'third', groups: ['E', 'H', 'I', 'J', 'K'] },
+    },
+    {
+      id: 'R32-13',
+      home: { type: 'winner', groups: ['J'] },
+      away: { type: 'second', groups: ['H'] },
+    },
+    {
+      id: 'R32-14',
+      home: { type: 'second', groups: ['D'] },
+      away: { type: 'second', groups: ['G'] },
+    },
+    {
+      id: 'R32-15',
+      home: { type: 'winner', groups: ['B'] },
+      away: { type: 'third', groups: ['E', 'F', 'G', 'I', 'J'] },
+    },
+    {
+      id: 'R32-16',
+      home: { type: 'winner', groups: ['K'] },
+      away: { type: 'third', groups: ['D', 'E', 'I', 'J', 'L'] },
+    },
+  ];
+
+  function calcQualifiersNormalFromState() {
+    ensureNormalGroupOrder();
+    const standingsByGroup = {};
+    const bestThirds = (normalState.bestThirds || []).map((x) => ({ ...x }));
+
+    for (const group of WORLD_CUP_2026_CONFIG.groups) {
+      const order =
+        normalState.groupOrder[group.id] || group.teams.map((t) => t.id);
+      const arr = order.map((teamId) => ({
+        teamId,
+        groupId: group.id,
+      }));
+      standingsByGroup[group.id] = arr;
+    }
+
+    return { standingsByGroup, bestThirds };
+  }
+
+  function buildBracketNormal(qualifiers) {
+    const rounds = {
+      R32: [],
+      R16: [],
+      QF: [],
+      SF: [],
+      FINAL: [],
+      THIRD: [],
+    };
+
+    const firstByGroup = {};
+    const secondByGroup = {};
+    for (const group of WORLD_CUP_2026_CONFIG.groups) {
+      const st = qualifiers.standingsByGroup[group.id] || [];
+      if (st[0]) firstByGroup[group.id] = st[0];
+      if (st[1]) secondByGroup[group.id] = st[1];
+    }
+
+    const bestThirds = qualifiers.bestThirds || [];
+    const usedThird = new Set();
+
+    function pickThird(allowedGroups) {
+      for (let i = 0; i < bestThirds.length; i++) {
+        if (usedThird.has(i)) continue;
+        const cand = bestThirds[i];
+        if (allowedGroups.includes(cand.groupId)) {
+          usedThird.add(i);
+          return cand;
+        }
+      }
+      for (let i = 0; i < bestThirds.length; i++) {
+        if (usedThird.has(i)) continue;
+        const cand = bestThirds[i];
+        usedThird.add(i);
+        return cand;
+      }
+      return null;
+    }
+
+    function resolveSide(slot) {
+      if (slot.type === 'winner') {
+        const row = firstByGroup[slot.groups[0]];
+        return row ? row.teamId : null;
+      }
+      if (slot.type === 'second') {
+        const row = secondByGroup[slot.groups[0]];
+        return row ? row.teamId : null;
+      }
+      if (slot.type === 'third') {
+        const picked = pickThird(slot.groups);
+        return picked ? picked.teamId : null;
+      }
+      return null;
+    }
+
+    ROUND_OF_32_TEMPLATE_TG.forEach((tpl) => {
+      const homeTeamId = resolveSide(tpl.home);
+      const awayTeamId = resolveSide(tpl.away);
+      const match = {
+        id: tpl.id,
+        round: 'R32',
+        homeTeamId,
+        awayTeamId,
+      };
+      rounds.R32.push(match);
+    });
+
+    // Дальнейшие раунды — простая сетка 16 → 8 → 4 → 2 + матч за третье
+    for (let i = 0; i < 8; i++) {
+      const match = {
+        id: `R16-${i + 1}`,
+        round: 'R16',
+        homeSource: { round: 'R32', index: i * 2 },
+        awaySource: { round: 'R32', index: i * 2 + 1 },
+      };
+      rounds.R16.push(match);
+    }
+
+    for (let i = 0; i < 4; i++) {
+      const match = {
+        id: `QF-${i + 1}`,
+        round: 'QF',
+        homeSource: { round: 'R16', index: i * 2 },
+        awaySource: { round: 'R16', index: i * 2 + 1 },
+      };
+      rounds.QF.push(match);
+    }
+
+    for (let i = 0; i < 2; i++) {
+      const match = {
+        id: `SF-${i + 1}`,
+        round: 'SF',
+        homeSource: { round: 'QF', index: i * 2 },
+        awaySource: { round: 'QF', index: i * 2 + 1 },
+      };
+      rounds.SF.push(match);
+    }
+
+    rounds.FINAL.push({
+      id: 'FINAL-1',
+      round: 'FINAL',
+      homeSource: { round: 'SF', index: 0 },
+      awaySource: { round: 'SF', index: 1 },
+    });
+
+    rounds.THIRD.push({
+      id: 'THIRD-1',
+      round: 'THIRD',
+      homeSource: { round: 'SF', index: 0, loser: true },
+      awaySource: { round: 'SF', index: 1, loser: true },
+    });
+
+    return rounds;
+  }
+
+  function getMatchTeamsNormal(match, rounds, winners) {
+    if (match.round === 'R32') {
+      return { homeId: match.homeTeamId, awayId: match.awayTeamId };
+    }
+    const { homeSource, awaySource } = match;
+    function resolveSource(src) {
+      const srcMatch = rounds[src.round][src.index];
+      if (!srcMatch) return null;
+      const winner = winners[srcMatch.id];
+      if (!winner) return null;
+      if (!src.loser) return winner;
+      const t = getMatchTeamsNormal(srcMatch, rounds, winners);
+      if (!t.homeId || !t.awayId) return null;
+      return winner === t.homeId ? t.awayId : t.homeId;
+    }
+    return {
+      homeId: resolveSource(homeSource),
+      awayId: resolveSource(awaySource),
+    };
+  }
+
+  function renderKnockoutNormal(rounds) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tg-ko-grid';
+
+    const roundDefs = [
+      { id: 'R32', label: '1/16 финала' },
+      { id: 'R16', label: '1/8 финала' },
+      { id: 'QF', label: '1/4 финала' },
+      { id: 'SF', label: 'Полуфиналы' },
+      { id: 'FINAL', label: 'Финал' },
+      { id: 'THIRD', label: 'Матч за 3‑е место' },
+    ];
+
+    roundDefs.forEach((rdef) => {
+      const col = document.createElement('div');
+      col.className = 'tg-ko-column';
+
+      const head = document.createElement('div');
+      head.className = 'tg-ko-column-title';
+      head.textContent = rdef.label;
+      col.appendChild(head);
+
+      const list = document.createElement('div');
+      list.className = 'tg-ko-column-matches';
+
+      const matches = rounds[rdef.id] || [];
+      matches.forEach((match) => {
+        const teams = getMatchTeamsNormal(match, rounds, normalState.knockoutWinners);
+        const homeTeam = teams.homeId ? findTeamById(teams.homeId) : null;
+        const awayTeam = teams.awayId ? findTeamById(teams.awayId) : null;
+
+        const card = document.createElement('div');
+        card.className = 'tg-ko-match';
+
+        function makeRow(team, sideKey) {
+          const btn = document.createElement('button');
+          btn.className = 'tg-ko-team';
+          if (!team) {
+            btn.disabled = true;
+            btn.textContent = '—';
+            return btn;
+          }
+          const isWinner = normalState.knockoutWinners[match.id] === team.id;
+          if (isWinner) btn.classList.add('tg-ko-team-winner');
+          btn.innerHTML = `
+            <span class="flag-wrap">${renderFlagHtmlSimple(team)}</span>
+            <span class="team-name">${team.name}</span>
+          `;
+          btn.addEventListener('click', () => {
+            normalState.knockoutWinners[match.id] = team.id;
+            renderNormalMode();
+          });
+          return btn;
+        }
+
+        card.appendChild(makeRow(homeTeam, 'home'));
+        card.appendChild(makeRow(awayTeam, 'away'));
+
+        list.appendChild(card);
+      });
+
+      col.appendChild(list);
+      wrapper.appendChild(col);
+    });
+
+    return wrapper;
   }
 
   function renderNormalMode() {
@@ -162,6 +471,16 @@ document.addEventListener('DOMContentLoaded', () => {
       );
     }
     const selected = normalState.bestThirds;
+
+    // Ключ для отслеживания изменения групп/третьих мест
+    const qualKey = JSON.stringify({
+      groupOrder: normalState.groupOrder,
+      bestThirds: selected,
+    });
+    if (normalState.lastQualKey !== qualKey) {
+      normalState.knockoutWinners = {};
+      normalState.lastQualKey = qualKey;
+    }
     const header = document.createElement('div');
     header.className = 'thirds-header';
     header.innerHTML = `
@@ -201,6 +520,24 @@ document.addEventListener('DOMContentLoaded', () => {
     container.appendChild(subtitle);
     container.appendChild(groupsGrid);
     container.appendChild(thirdsPanel);
+
+    // Плей‑офф (нормальный режим) — появляется, когда выбраны 8 третьих мест
+    if (selected.length === 8) {
+      const koWrapper = document.createElement('div');
+      koWrapper.className = 'tg-ko-wrapper';
+
+      const koTitle = document.createElement('h2');
+      koTitle.className = 'tg-title';
+      koTitle.textContent = 'Плей‑офф';
+      koWrapper.appendChild(koTitle);
+
+      const qualifiers = calcQualifiersNormalFromState();
+      const bracket = buildBracketNormal(qualifiers);
+      const koGrid = renderKnockoutNormal(bracket);
+      koWrapper.appendChild(koGrid);
+
+      container.appendChild(koWrapper);
+    }
 
     root.appendChild(container);
 
