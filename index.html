@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>ЧМ‑2026 — симулятор</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="app-header">
+        <div class="title-block">
+          <h1>Чемпионат мира 2026 — симулятор</h1>
+          <p class="subtitle">
+            Группы, плей‑офф и несколько сценариев прогнозов
+          </p>
+        </div>
+        <div class="scenario-bar">
+          <div class="scenario-select-wrapper">
+            <label for="scenario-select">Сценарий:</label>
+            <select id="scenario-select"></select>
+          </div>
+          <div class="scenario-actions">
+            <button id="scenario-new">Новый</button>
+            <button id="scenario-rename">Переименовать</button>
+            <button id="scenario-delete">Удалить</button>
+            <button id="scenario-export">Экспорт</button>
+            <button id="scenario-import">Импорт</button>
+            <input
+              id="scenario-import-input"
+              type="file"
+              accept="application/json"
+              style="display: none"
+            />
+          </div>
+        </div>
+      </header>
+
+      <div id="empty-state" class="empty-state hidden">
+        <h2>Начни свой первый прогноз</h2>
+        <p class="empty-subtitle">
+          Создай новый сценарий или импортируй уже сохранённый файл симуляции.
+        </p>
+        <div class="empty-actions">
+          <button id="empty-new">Создать новый сценарий</button>
+          <button id="empty-import">Импортировать сценарий</button>
+        </div>
+        <div id="empty-new-form" class="empty-new-form hidden">
+          <input
+            id="empty-scenario-name"
+            type="text"
+            placeholder="Название сценария"
+          />
+          <input
+            id="empty-scenario-author"
+            type="text"
+            placeholder="Автор (необязательно)"
+          />
+          <div class="difficulty-block">
+            <span class="empty-label">Уровень сложности:</span>
+            <div class="difficulty-buttons">
+              <button class="difficulty-btn locked" data-difficulty="easy">
+                Легко <span class="icon">🔒</span>
+              </button>
+              <button class="difficulty-btn active" data-difficulty="normal">
+                Нормально <span class="icon icon-help">❓</span>
+              </button>
+              <button class="difficulty-btn" data-difficulty="hard">
+                Сложно <span class="icon icon-help">❓</span>
+              </button>
+              <button class="difficulty-btn locked" data-difficulty="hardcore">
+                Хардкор <span class="icon">🔒</span>
+              </button>
+              <button class="difficulty-btn locked" data-difficulty="insane">
+                Безумие <span class="icon">🔒</span>
+              </button>
+            </div>
+            <div id="difficulty-hint" class="difficulty-hint"></div>
+          </div>
+          <div class="empty-new-actions">
+            <button id="empty-create">Создать</button>
+            <button id="empty-cancel" type="button">Отмена</button>
+          </div>
+        </div>
+      </div>
+
+      <nav class="tabs">
+        <button class="tab-button active" data-tab="playoffs">Стыковые матчи</button>
+        <button class="tab-button" data-tab="groups">Групповой этап</button>
+        <button class="tab-button" data-tab="knockout">Плей‑офф</button>
+        <button class="tab-button" data-tab="about">Справка</button>
+      </nav>
+
+      <main class="app-main">
+        <section id="tab-playoffs" class="tab active">
+          <div class="knockout-toolbar">
+            <p class="note">
+              Здесь разыгрываются стыковые матчи. Победители путей автоматически
+              попадают в группы вместо слотов «Путь A/B/C/D» и «Путь 1/2».
+            </p>
+            <div class="stage-actions">
+              <button id="playoffs-save">Сохранить стыки</button>
+              <button id="playoffs-reset">Сбросить стыки</button>
+            </div>
+          </div>
+          <div id="playoffs-container" class="playoffs-grid"></div>
+        </section>
+
+        <section id="tab-groups" class="tab">
+          <div class="groups-toolbar">
+            <p class="note">
+              Здесь настраивается исход группового этапа. После сохранения групп
+              станет доступно редактирование плей‑офф.
+            </p>
+            <div class="stage-actions">
+              <button id="groups-save">Сохранить группы</button>
+              <button id="groups-reset">Сбросить группы</button>
+            </div>
+          </div>
+          <div id="groups-container" class="groups-grid"></div>
+        </section>
+
+        <section id="tab-knockout" class="tab">
+          <div class="knockout-toolbar">
+            <p class="note">
+              Сетка плей‑офф строится автоматически по результатам группового
+              этапа. Ничьи в плей‑офф не допускаются — при равном счёте
+              победитель не определяется.
+            </p>
+          </div>
+          <div id="knockout-container" class="knockout-grid"></div>
+          <div id="knockout-summary" class="knockout-summary"></div>
+        </section>
+
+        <section id="tab-about" class="tab">
+          <div class="about">
+            <h2>Как пользоваться симулятором</h2>
+            <ol>
+              <li>Выбери или создай сценарий в верхней панели (можно указать автора).</li>
+              <li>На вкладке «Групповой этап» заполняй счёт в каждом матче.</li>
+              <li>Таблицы групп и список участников плей‑офф пересчитываются автоматически.</li>
+              <li>На вкладке «Плей‑офф» заполняй счёт матчей 1/16, 1/8, 1/4, полуфиналов и финала.</li>
+              <li>Чтобы поделиться симуляцией с другом — нажми «Экспорт» и отправь ему JSON‑файл. Он может импортировать его у себя.</li>
+            </ol>
+            <p>
+              Сейчас сетка плей‑офф строится по упрощённой схеме: 32 лучших
+              команды после групп ранжируются по очкам и разнице мячей, затем
+              играют по принципу 1‑я против 32‑й, 2‑я против 31‑й и т.д.
+            </p>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="group-modal" class="modal hidden">
+      <div class="modal-backdrop" data-modal-close="true"></div>
+      <div class="modal-content">
+        <header class="modal-header">
+          <h2 id="group-modal-title"></h2>
+          <button class="modal-close" data-modal-close="true">✕</button>
+        </header>
+        <div id="group-modal-body" class="modal-body"></div>
+      </div>
+    </div>
+
+    <script src="data.js"></script>
+    <script src="app.js"></script>
+  </body>
+  </html>
+
+
