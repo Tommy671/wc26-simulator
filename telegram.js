@@ -353,7 +353,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const card = document.createElement('div');
         card.className = 'tg-ko-match';
 
-        function makeRow(team, sideKey) {
+        function makeRow(team) {
           const btn = document.createElement('button');
           btn.className = 'tg-ko-team';
           if (!team) {
@@ -366,16 +366,22 @@ document.addEventListener('DOMContentLoaded', () => {
           btn.innerHTML = `
             <span class="flag-wrap">${renderFlagHtmlSimple(team)}</span>
             <span class="team-name">${team.name}</span>
+            <span class="tg-ko-pick">✓</span>
           `;
-          btn.addEventListener('click', () => {
+          btn.addEventListener('click', (e) => {
+            if (!e.target.closest('.tg-ko-pick')) return;
+            const gridEl = document.querySelector('.tg-ko-grid');
+            const scrollLeft = gridEl ? gridEl.scrollLeft : 0;
             normalState.knockoutWinners[match.id] = team.id;
             renderNormalMode();
+            const newGrid = document.querySelector('.tg-ko-grid');
+            if (newGrid) newGrid.scrollLeft = scrollLeft;
           });
           return btn;
         }
 
-        card.appendChild(makeRow(homeTeam, 'home'));
-        card.appendChild(makeRow(awayTeam, 'away'));
+        card.appendChild(makeRow(homeTeam));
+        card.appendChild(makeRow(awayTeam));
 
         list.appendChild(card);
       });
@@ -383,6 +389,81 @@ document.addEventListener('DOMContentLoaded', () => {
       col.appendChild(list);
       wrapper.appendChild(col);
     });
+
+    // Итоги турнира (чемпион / 2-е / 3-е место)
+    const finalMatch = (rounds.FINAL && rounds.FINAL[0]) || null;
+    const thirdMatch = (rounds.THIRD && rounds.THIRD[0]) || null;
+
+    if (finalMatch) {
+      const finalTeams = getMatchTeamsNormal(
+        finalMatch,
+        rounds,
+        normalState.knockoutWinners
+      );
+      const winnerId = normalState.knockoutWinners[finalMatch.id];
+      if (winnerId && finalTeams.homeId && finalTeams.awayId) {
+        const champion = findTeamById(winnerId);
+        const runnerUpId =
+          winnerId === finalTeams.homeId ? finalTeams.awayId : finalTeams.homeId;
+        const runnerUp = findTeamById(runnerUpId);
+
+        let thirdPlace = null;
+        if (thirdMatch) {
+          const thirdTeams = getMatchTeamsNormal(
+            thirdMatch,
+            rounds,
+            normalState.knockoutWinners
+          );
+          const thirdWinnerId = normalState.knockoutWinners[thirdMatch.id];
+          if (
+            thirdWinnerId &&
+            thirdTeams.homeId &&
+            thirdTeams.awayId &&
+            (thirdWinnerId === thirdTeams.homeId ||
+              thirdWinnerId === thirdTeams.awayId)
+          ) {
+            thirdPlace = findTeamById(thirdWinnerId);
+          }
+        }
+
+        const summary = document.createElement('div');
+        summary.className = 'tg-ko-summary';
+
+        const sTitle = document.createElement('div');
+        sTitle.className = 'tg-ko-summary-title';
+        sTitle.textContent = 'Итоги турнира';
+        summary.appendChild(sTitle);
+
+        function addLine(label, team) {
+          const line = document.createElement('div');
+          line.className = 'tg-ko-summary-line';
+
+          const lbl = document.createElement('span');
+          lbl.className = 'tg-ko-summary-label';
+          lbl.textContent = label;
+          line.appendChild(lbl);
+
+          if (team) {
+            const t = document.createElement('span');
+            t.className = 'tg-ko-summary-team';
+            t.innerHTML = `${renderFlagHtmlSimple(team)}<span>${team.name}</span>`;
+            line.appendChild(t);
+          } else {
+            const t = document.createElement('span');
+            t.textContent = '—';
+            line.appendChild(t);
+          }
+
+          summary.appendChild(line);
+        }
+
+        addLine('Чемпион', champion);
+        addLine('2-е место', runnerUp);
+        addLine('3-е место', thirdPlace);
+
+        wrapper.appendChild(summary);
+      }
+    }
 
     return wrapper;
   }

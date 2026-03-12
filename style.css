@@ -414,6 +414,8 @@ button:active {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  justify-content: space-between;
+  min-height: 420px;
 }
 
 .tg-ko-match {
@@ -455,6 +457,55 @@ button:active {
 
 .tg-ko-team-winner:hover {
   background: var(--accent-soft);
+}
+
+.tg-ko-pick {
+  margin-left: auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.7);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.tg-ko-team-winner .tg-ko-pick {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: #22c55e;
+}
+
+.tg-ko-summary {
+  margin-top: 10px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(31, 41, 55, 0.8);
+  font-size: 13px;
+}
+
+.tg-ko-summary-title {
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.tg-ko-summary-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.tg-ko-summary-label {
+  color: var(--muted);
+  min-width: 70px;
+}
+
+.tg-ko-summary-team {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .thirds-panel {
