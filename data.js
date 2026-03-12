@@ -11,12 +11,7 @@ const WORLD_CUP_2026_CONFIG = {
         { id: "MEX", name: "Мексика", flag: "🇲🇽" },
         { id: "RSA", name: "ЮАР", flag: "🇿🇦" },
         { id: "KOR", name: "Южная Корея", flag: "🇰🇷" },
-        {
-          id: "EU_PO_D_WIN",
-          name: "Победитель пути D (Европа)",
-          shortName: "Путь D",
-          flag: "❓",
-        },
+        { id: "IRL", name: "Ирландия", flag: "🇮🇪" },
       ],
     },
     {
@@ -24,12 +19,7 @@ const WORLD_CUP_2026_CONFIG = {
       name: "Группа B",
       teams: [
         { id: "CAN", name: "Канада", flag: "🇨🇦" },
-        {
-          id: "EU_PO_A_WIN",
-          name: "Победитель пути A (Европа)",
-          shortName: "Путь A",
-          flag: "❓",
-        },
+        { id: "ITA", name: "Италия", flag: "🇮🇹" },
         { id: "QAT", name: "Катар", flag: "🇶🇦" },
         { id: "SUI", name: "Швейцария", flag: "🇨🇭" },
       ],
@@ -51,12 +41,7 @@ const WORLD_CUP_2026_CONFIG = {
         { id: "USA", name: "США", flag: "🇺🇸" },
         { id: "PAR", name: "Парагвай", flag: "🇵🇾" },
         { id: "AUS", name: "Австралия", flag: "🇦🇺" },
-        {
-          id: "EU_PO_C_WIN",
-          name: "Победитель пути C (Европа)",
-          shortName: "Путь C",
-          flag: "❓",
-        },
+        { id: "TUR", name: "Турция", flag: "🇹🇷" },
       ],
     },
     {
@@ -75,12 +60,7 @@ const WORLD_CUP_2026_CONFIG = {
       teams: [
         { id: "NED", name: "Нидерланды", flag: "🇳🇱" },
         { id: "JPN", name: "Япония", flag: "🇯🇵" },
-        {
-          id: "EU_PO_B_WIN",
-          name: "Победитель пути B (Европа)",
-          shortName: "Путь B",
-          flag: "❓",
-        },
+        { id: "SWE", name: "Швеция", flag: "🇸🇪" },
         { id: "TUN", name: "Тунис", flag: "🇹🇳" },
       ],
     },
@@ -110,12 +90,7 @@ const WORLD_CUP_2026_CONFIG = {
       teams: [
         { id: "FRA", name: "Франция", flag: "🇫🇷" },
         { id: "SEN", name: "Сенегал", flag: "🇸🇳" },
-        {
-          id: "IC_PO2_WIN",
-          name: "Победитель межконт. пути 2",
-          shortName: "Путь 2",
-          flag: "❓",
-        },
+        { id: "BOL", name: "Боливия", flag: "🇧🇴" },
         { id: "NOR", name: "Норвегия", flag: "🇳🇴" },
       ],
     },
@@ -134,12 +109,7 @@ const WORLD_CUP_2026_CONFIG = {
       name: "Группа K",
       teams: [
         { id: "POR", name: "Португалия", flag: "🇵🇹" },
-        {
-          id: "IC_PO1_WIN",
-          name: "Победитель межконт. пути 1",
-          shortName: "Путь 1",
-          flag: "❓",
-        },
+        { id: "COD", name: "ДР Конго", flag: "🇨🇩" },
         { id: "UZB", name: "Узбекистан", flag: "🇺🇿" },
         { id: "COL", name: "Колумбия", flag: "🇨🇴" },
       ],

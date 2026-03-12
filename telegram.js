@@ -33,13 +33,224 @@ document.addEventListener('DOMContentLoaded', () => {
     {
       id: 'hardcore',
       title: 'Хардкор',
-      subtitle: 'В разработке',
-      description: 'Особый режим для самых упоротых. Появится позже.',
-      disabled: true,
+      subtitle: 'Для самых упоротых',
+      description: 'Экспериментальный режим. Логику продумем позже, сейчас заглушка.',
     },
   ];
 
+  // Простое состояние для нормального режима (без localStorage)
+  const normalState = {
+    groupOrder: {},
+    bestThirds: [],
+  };
+
+  function findTeamById(teamId) {
+    if (!window.WORLD_CUP_2026_CONFIG) return null;
+    for (const group of WORLD_CUP_2026_CONFIG.groups) {
+      const team = group.teams.find((t) => t.id === teamId);
+      if (team) return team;
+    }
+    return null;
+  }
+
+  function renderFlagHtmlSimple(team) {
+    const flag = team && team.flag ? team.flag : '🏳️';
+    return `<span class="flag-emoji">${flag}</span>`;
+  }
+
+  function ensureNormalGroupOrder() {
+    if (!window.WORLD_CUP_2026_CONFIG) return;
+    for (const group of WORLD_CUP_2026_CONFIG.groups) {
+      if (!normalState.groupOrder[group.id]) {
+        normalState.groupOrder[group.id] = group.teams.map((t) => t.id);
+      }
+    }
+    if (!Array.isArray(normalState.bestThirds)) {
+      normalState.bestThirds = [];
+    }
+  }
+
+  function renderNormalMode() {
+    ensureNormalGroupOrder();
+    root.innerHTML = '';
+
+    const container = document.createElement('div');
+    container.className = 'tg-screen tg-level-screen';
+
+    const back = document.createElement('button');
+    back.className = 'tg-back-button';
+    back.textContent = '← Назад к выбору уровня';
+    back.addEventListener('click', renderStartScreen);
+
+    const title = document.createElement('h1');
+    title.className = 'tg-title';
+    title.textContent = 'Нормальный режим';
+
+    const subtitle = document.createElement('p');
+    subtitle.className = 'tg-subtitle';
+    subtitle.textContent =
+      'Перетаскивай команды внутри группы (1–4 места) и выбери 8 лучших третьих. Плей‑офф добавим следующим шагом.';
+
+    const groupsGrid = document.createElement('div');
+    groupsGrid.className = 'groups-grid';
+
+    // Рендер групп
+    for (const group of WORLD_CUP_2026_CONFIG.groups) {
+      const card = document.createElement('div');
+      card.className = 'group-card';
+
+      const header = document.createElement('div');
+      header.className = 'group-header';
+      header.innerHTML = `
+        <div>
+          <div class="group-title">${group.name}</div>
+          <div class="group-subtitle">Перетащи команды в порядке 1–4 места</div>
+        </div>
+      `;
+      card.appendChild(header);
+
+      const list = document.createElement('div');
+      list.className = 'group-teams-list';
+
+      const order = normalState.groupOrder[group.id] || group.teams.map((t) => t.id);
+
+      order.forEach((teamId, index) => {
+        const team = findTeamById(teamId);
+        if (!team) return;
+        const row = document.createElement('div');
+        row.className = 'team-card';
+        row.draggable = true;
+        row.dataset.groupId = group.id;
+        row.dataset.teamId = teamId;
+        row.innerHTML = `
+          <span class="team-position">${index + 1}</span>
+          <div class="standings-team">
+            ${renderFlagHtmlSimple(team)}
+            <span class="team-name">${team.name}</span>
+          </div>
+        `;
+        list.appendChild(row);
+      });
+
+      card.appendChild(list);
+      groupsGrid.appendChild(card);
+    }
+
+    // Панель выбора 8 лучших третьих мест
+    const thirdsPanel = document.createElement('div');
+    thirdsPanel.className = 'thirds-panel';
+
+    const selected = normalState.bestThirds || [];
+    const header = document.createElement('div');
+    header.className = 'thirds-header';
+    header.innerHTML = `
+      <span class="thirds-title">Выбор 8 лучших третьих мест</span>
+      <span class="badge">${selected.length} из 8 выбрано</span>
+    `;
+    thirdsPanel.appendChild(header);
+
+    const listThirds = document.createElement('div');
+    listThirds.className = 'thirds-list';
+
+    for (const group of WORLD_CUP_2026_CONFIG.groups) {
+      const order = normalState.groupOrder[group.id] || group.teams.map((t) => t.id);
+      const thirdTeamId = order[2];
+      if (!thirdTeamId) continue;
+      const team = findTeamById(thirdTeamId);
+      if (!team) continue;
+      const isSelected = selected.some(
+        (x) => x.groupId === group.id && x.teamId === thirdTeamId
+      );
+      const pill = document.createElement('button');
+      pill.className = 'third-pill' + (isSelected ? ' third-pill-selected' : '');
+      pill.dataset.groupId = group.id;
+      pill.dataset.teamId = thirdTeamId;
+      pill.innerHTML = `
+        <span class="badge">${group.id}-3</span>
+        ${renderFlagHtmlSimple(team)}
+        <span class="team-name">${team.name}</span>
+      `;
+      listThirds.appendChild(pill);
+    }
+
+    thirdsPanel.appendChild(listThirds);
+
+    container.appendChild(back);
+    container.appendChild(title);
+    container.appendChild(subtitle);
+    container.appendChild(groupsGrid);
+    container.appendChild(thirdsPanel);
+
+    root.appendChild(container);
+
+    // Drag & drop внутри группы
+    let dragTeamId = null;
+    let dragGroupId = null;
+
+    groupsGrid.querySelectorAll('.team-card').forEach((row) => {
+      row.addEventListener('dragstart', (e) => {
+        dragTeamId = row.dataset.teamId;
+        dragGroupId = row.dataset.groupId;
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      row.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        row.classList.add('drag-over');
+      });
+      row.addEventListener('dragleave', () => {
+        row.classList.remove('drag-over');
+      });
+      row.addEventListener('drop', (e) => {
+        e.preventDefault();
+        row.classList.remove('drag-over');
+        const targetTeamId = row.dataset.teamId;
+        const targetGroupId = row.dataset.groupId;
+        if (!dragTeamId || !dragGroupId || dragGroupId !== targetGroupId) return;
+        if (dragTeamId === targetTeamId) return;
+        const arr = normalState.groupOrder[targetGroupId] || [];
+        const from = arr.indexOf(dragTeamId);
+        const to = arr.indexOf(targetTeamId);
+        if (from === -1 || to === -1) return;
+        arr.splice(from, 1);
+        arr.splice(to, 0, dragTeamId);
+        dragTeamId = null;
+        dragGroupId = null;
+        renderNormalMode();
+      });
+    });
+
+    // Клики по третьим местам
+    thirdsPanel.querySelectorAll('.third-pill').forEach((pill) => {
+      pill.addEventListener('click', () => {
+        const groupId = pill.dataset.groupId;
+        const teamId = pill.dataset.teamId;
+        if (!Array.isArray(normalState.bestThirds)) {
+          normalState.bestThirds = [];
+        }
+        const arr = normalState.bestThirds;
+        const idx = arr.findIndex((x) => x.groupId === groupId && x.teamId === teamId);
+        if (idx !== -1) {
+          arr.splice(idx, 1);
+          renderNormalMode();
+          return;
+        }
+        if (arr.length >= 8) {
+          alert('Можно выбрать максимум 8 команд.');
+          return;
+        }
+        const existingIdx = arr.findIndex((x) => x.groupId === groupId);
+        if (existingIdx !== -1) arr.splice(existingIdx, 1);
+        arr.push({ groupId, teamId });
+        renderNormalMode();
+      });
+    });
+  }
+
   function renderLevelStub(level) {
+    if (level.id === 'normal') {
+      renderNormalMode();
+      return;
+    }
     root.innerHTML = '';
 
     const container = document.createElement('div');
