@@ -45,7 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   function findTeamById(teamId) {
-    if (!window.WORLD_CUP_2026_CONFIG) return null;
+    if (typeof WORLD_CUP_2026_CONFIG === 'undefined') return null;
     for (const group of WORLD_CUP_2026_CONFIG.groups) {
       const team = group.teams.find((t) => t.id === teamId);
       if (team) return team;
@@ -59,7 +59,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function ensureNormalGroupOrder() {
-    if (!window.WORLD_CUP_2026_CONFIG) return;
+    if (typeof WORLD_CUP_2026_CONFIG === 'undefined') return;
     for (const group of WORLD_CUP_2026_CONFIG.groups) {
       if (!normalState.groupOrder[group.id]) {
         normalState.groupOrder[group.id] = group.teams.map((t) => t.id);
@@ -89,7 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const subtitle = document.createElement('p');
     subtitle.className = 'tg-subtitle';
     subtitle.textContent =
-      'Перетаскивай команды внутри группы (1–4 места) и выбери 8 лучших третьих. Плей‑офф добавим следующим шагом.';
+      'Перетаскивай команды внутри группы (1–4 места) и выбирай 8 лучших третьих.';
 
     const groupsGrid = document.createElement('div');
     groupsGrid.className = 'groups-grid';
@@ -140,7 +140,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const thirdsPanel = document.createElement('div');
     thirdsPanel.className = 'thirds-panel';
 
-    const selected = normalState.bestThirds || [];
+    // Нормализуем выбор третьих мест под текущее расположение команд
+    const currentThirdByGroup = {};
+    for (const group of WORLD_CUP_2026_CONFIG.groups) {
+      const order = normalState.groupOrder[group.id] || group.teams.map((t) => t.id);
+      if (order[2]) currentThirdByGroup[group.id] = order[2];
+    }
+    if (!Array.isArray(normalState.bestThirds)) {
+      normalState.bestThirds = [];
+    } else {
+      normalState.bestThirds = normalState.bestThirds.filter(
+        (x) => currentThirdByGroup[x.groupId] === x.teamId
+      );
+    }
+    const selected = normalState.bestThirds;
     const header = document.createElement('div');
     header.className = 'thirds-header';
     header.innerHTML = `
@@ -269,15 +282,9 @@ document.addEventListener('DOMContentLoaded', () => {
     subtitle.className = 'tg-subtitle';
     subtitle.textContent = level.subtitle;
 
-    const hint = document.createElement('p');
-    hint.className = 'tg-hint';
-    hint.textContent =
-      'Пока здесь только заглушка, дальше подключим полноценный симулятор для этого режима.';
-
     container.appendChild(back);
     container.appendChild(title);
     container.appendChild(subtitle);
-    container.appendChild(hint);
 
     root.appendChild(container);
   }
