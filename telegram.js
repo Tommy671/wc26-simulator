@@ -46,6 +46,12 @@ document.addEventListener('DOMContentLoaded', () => {
     lastQualKey: null,
   };
 
+  // Заготовка под работу с составами (будем использовать позже)
+  function getSquadForTeam(teamId) {
+    if (typeof SQUADS_BY_TEAM_ID === 'undefined') return [];
+    return SQUADS_BY_TEAM_ID[teamId] || [];
+  }
+
   function findTeamById(teamId) {
     if (typeof WORLD_CUP_2026_CONFIG === 'undefined') return null;
     for (const group of WORLD_CUP_2026_CONFIG.groups) {
