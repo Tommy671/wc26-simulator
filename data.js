@@ -10,8 +10,8 @@ const WORLD_CUP_2026_CONFIG = {
       teams: [
         { id: "MEX", name: "Мексика", flag: "🇲🇽" },
         { id: "RSA", name: "ЮАР", flag: "🇿🇦" },
-        { id: "KOR", name: "Южная Корея", flag: "🇰🇷" },
-        { id: "IRL", name: "Ирландия", flag: "🇮🇪" },
+        { id: "KOR", name: "Республика Корея", flag: "🇰🇷" },
+        { id: "CZE", name: "Чехия", flag: "🇨🇿" },
       ],
     },
     {
@@ -19,7 +19,7 @@ const WORLD_CUP_2026_CONFIG = {
       name: "Группа B",
       teams: [
         { id: "CAN", name: "Канада", flag: "🇨🇦" },
-        { id: "ITA", name: "Италия", flag: "🇮🇹" },
+        { id: "BIH", name: "Босния и Герцеговина", flag: "🇧🇦" },
         { id: "QAT", name: "Катар", flag: "🇶🇦" },
         { id: "SUI", name: "Швейцария", flag: "🇨🇭" },
       ],
@@ -90,7 +90,7 @@ const WORLD_CUP_2026_CONFIG = {
       teams: [
         { id: "FRA", name: "Франция", flag: "🇫🇷" },
         { id: "SEN", name: "Сенегал", flag: "🇸🇳" },
-        { id: "BOL", name: "Боливия", flag: "🇧🇴" },
+        { id: "IRQ", name: "Ирак", flag: "🇮🇶" },
         { id: "NOR", name: "Норвегия", flag: "🇳🇴" },
       ],
     },

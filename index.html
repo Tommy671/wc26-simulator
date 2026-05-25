@@ -85,28 +85,13 @@
       </div>
 
       <nav class="tabs">
-        <button class="tab-button active" data-tab="playoffs">Стыковые матчи</button>
-        <button class="tab-button" data-tab="groups">Групповой этап</button>
+        <button class="tab-button active" data-tab="groups">Групповой этап</button>
         <button class="tab-button" data-tab="knockout">Плей‑офф</button>
         <button class="tab-button" data-tab="about">Справка</button>
       </nav>
 
       <main class="app-main">
-        <section id="tab-playoffs" class="tab active">
-          <div class="knockout-toolbar">
-            <p class="note">
-              Здесь разыгрываются стыковые матчи. Победители путей автоматически
-              попадают в группы вместо слотов «Путь A/B/C/D» и «Путь 1/2».
-            </p>
-            <div class="stage-actions">
-              <button id="playoffs-save">Сохранить стыки</button>
-              <button id="playoffs-reset">Сбросить стыки</button>
-            </div>
-          </div>
-          <div id="playoffs-container" class="playoffs-grid"></div>
-        </section>
-
-        <section id="tab-groups" class="tab">
+        <section id="tab-groups" class="tab active">
           <div class="groups-toolbar">
             <p class="note">
               Здесь настраивается исход группового этапа. После сохранения групп

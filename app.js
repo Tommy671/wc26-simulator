@@ -1,4 +1,4 @@
-const STORAGE_KEY = "wc26_simulator_state_v1";
+const STORAGE_KEY = "wc26_simulator_state_v2";
 
 const ROUNDS = [
   { id: "R32", label: "1/16 финала" },
@@ -182,9 +182,6 @@ function ensureGroupOrderForScenario(scenario) {
   if (!scenario) return;
   if (!scenario.groupOrder) {
     scenario.groupOrder = {};
-  }
-  if (typeof scenario.playoffsLocked !== "boolean") {
-    scenario.playoffsLocked = false;
   }
   if (typeof scenario.groupsLocked !== "boolean") {
     scenario.groupsLocked = false;
@@ -395,7 +392,6 @@ function createEmptyScenario(
     createdAt: new Date().toISOString(),
     difficulty,
     groupMatches: generateAllGroupMatches(),
-    playoffMatches: generatePlayoffMatches(),
     knockoutResults: {},
     groupOrder: {},
     bestThirdsManual: [],
@@ -1432,8 +1428,6 @@ function bindTabs() {
       document.getElementById(`tab-${tabId}`).classList.add("active");
       if (tabId === "knockout") {
         renderKnockoutView();
-      } else if (tabId === "playoffs") {
-        renderPlayoffsView();
       } else if (tabId === "groups") {
         renderGroupsView();
       }
@@ -1569,9 +1563,9 @@ function bindScenarioControls() {
     const diffButtons = document.querySelectorAll(".difficulty-btn");
     const difficultyHints = {
       normal:
-        "Нормально — быстрый режим: перетаскиваешь команды в группах, выбираешь 8 лучших третьих и кликом отмечаешь победителей стыков и плей‑офф без счёта.",
+        "Нормально — быстрый режим: перетаскиваешь команды в группах, выбираешь 8 лучших третьих и кликом отмечаешь победителей плей‑офф без счёта.",
       hard:
-        "Сложно — полный режим: вводишь счёт во всех матчах стыков, групп и плей‑офф, таблицы и выход считаются по очкам и разнице мячей.",
+        "Сложно — полный режим: вводишь счёт в матчах групп и плей‑офф, таблицы и выход считаются по очкам и разнице мячей.",
     };
     diffButtons.forEach((btn) => {
       const value = btn.dataset.difficulty;
@@ -1617,56 +1611,14 @@ function bindScenarioControls() {
   }
 
   // Кнопки сохранения этапов
-  const playoffsSaveBtn = document.getElementById("playoffs-save");
-  const playoffsResetBtn = document.getElementById("playoffs-reset");
   const groupsSaveBtn = document.getElementById("groups-save");
   const groupsResetBtn = document.getElementById("groups-reset");
-
-  if (playoffsSaveBtn) {
-    playoffsSaveBtn.addEventListener("click", () => {
-      const s = getActiveScenario();
-      if (!s) return;
-      ensureGroupOrderForScenario(s);
-      if (s.playoffsLocked) {
-        alert("Стыки уже сохранены.");
-        return;
-      }
-      if (!arePlayoffsComplete(s)) {
-        alert("Сначала заполните все стыковые матчи.");
-        return;
-      }
-      s.playoffsLocked = true;
-      saveState();
-      renderAll();
-    });
-  }
-
-  if (playoffsResetBtn) {
-    playoffsResetBtn.addEventListener("click", () => {
-      const s = getActiveScenario();
-      if (!s) return;
-      if (
-        !confirm(
-          "Сбросить стыки? Группы и плей‑офф также будут очищены для этого сценария."
-        )
-      ) {
-        return;
-      }
-      resetPlayoffsAndLater(s);
-      saveState();
-      renderAll();
-    });
-  }
 
   if (groupsSaveBtn) {
     groupsSaveBtn.addEventListener("click", () => {
       const s = getActiveScenario();
       if (!s) return;
       ensureGroupOrderForScenario(s);
-      if (!s.playoffsLocked) {
-        alert("Сначала сохраните стыки.");
-        return;
-      }
       if (s.groupsLocked) {
         alert("Группы уже сохранены.");
         return;
@@ -1957,15 +1909,7 @@ function renderAll() {
   const knockoutTabActive = document
     .getElementById("tab-knockout")
     .classList.contains("active");
-  const playoffsTabActive = document
-    .getElementById("tab-playoffs")
-    .classList.contains("active");
-  if (knockoutTabActive) {
-    renderKnockoutView();
-  }
-  if (playoffsTabActive) {
-    renderPlayoffsView();
-  }
+  if (knockoutTabActive) renderKnockoutView();
   const groupsTabActive = document
     .getElementById("tab-groups")
     .classList.contains("active");
@@ -2001,8 +1945,7 @@ function openGroupModal(groupId) {
   if (!scenario) return;
   const group = WORLD_CUP_2026_CONFIG.groups.find((g) => g.id === groupId);
   if (!group) return;
-  const canEdit =
-    scenario.playoffsLocked && arePlayoffsComplete(scenario);
+  const canEdit = !scenario.groupsLocked;
 
   const modal = document.getElementById("group-modal");
   const titleEl = document.getElementById("group-modal-title");

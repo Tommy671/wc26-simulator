@@ -46,10 +46,185 @@ document.addEventListener('DOMContentLoaded', () => {
     lastQualKey: null,
   };
 
-  // Заготовка под работу с составами (будем использовать позже)
-  function getSquadForTeam(teamId) {
-    if (typeof SQUADS_BY_TEAM_ID === 'undefined') return [];
-    return SQUADS_BY_TEAM_ID[teamId] || [];
+  /** Слоты основы по схеме (11 позиций) — для отображения и проверки запаса */
+  const FORMATION_SLOTS = {
+    '4-3-3': ['GK', 'LB', 'CB', 'CB', 'RB', 'CM', 'CM', 'CM', 'LW', 'ST', 'RW'],
+    '4-2-3-1': ['GK', 'LB', 'CB', 'CB', 'RB', 'CDM', 'CDM', 'LM', 'CAM', 'RM', 'ST'],
+    '4-4-2': ['GK', 'LB', 'CB', 'CB', 'RB', 'LM', 'CM', 'CM', 'RM', 'ST', 'ST'],
+    '4-1-4-1': ['GK', 'LB', 'CB', 'CB', 'RB', 'CDM', 'LM', 'CM', 'CM', 'RM', 'ST'],
+    '4-5-1': ['GK', 'LB', 'CB', 'CB', 'RB', 'LM', 'CM', 'CM', 'CM', 'RM', 'ST'],
+    '3-4-3': ['GK', 'CB', 'CB', 'CB', 'LM', 'CM', 'CM', 'RM', 'LW', 'ST', 'RW'],
+    '5-4-1': ['GK', 'CB', 'CB', 'CB', 'LB', 'RB', 'LM', 'CM', 'CM', 'RM', 'ST'],
+  };
+
+  function getSquadEntry(teamId) {
+    if (typeof SQUADS_BY_TEAM_ID === 'undefined') return null;
+    return SQUADS_BY_TEAM_ID[teamId] || null;
+  }
+
+  // --- Модальное окно состава (заглушка под будущее поле) ---
+  let squadModalEl = null;
+
+  function ensureSquadModal() {
+    if (squadModalEl) return squadModalEl;
+    squadModalEl = document.createElement('div');
+    squadModalEl.className = 'tg-squad-modal';
+    squadModalEl.setAttribute('aria-hidden', 'true');
+    squadModalEl.innerHTML = `
+      <div class="tg-squad-modal-backdrop" data-close="1"></div>
+      <div class="tg-squad-modal-sheet" role="dialog" aria-modal="true" aria-labelledby="tg-squad-modal-title">
+        <header class="tg-squad-modal-header">
+          <div class="tg-squad-modal-team" id="tg-squad-modal-team"></div>
+          <button type="button" class="tg-squad-modal-close" aria-label="Закрыть">×</button>
+        </header>
+        <p class="tg-squad-modal-formation" id="tg-squad-modal-formation"></p>
+        <div class="tg-squad-pitch-placeholder" id="tg-squad-pitch-placeholder">
+          <span>Схема на поле — в разработке</span>
+        </div>
+        <div class="tg-squad-lists" id="tg-squad-lists"></div>
+      </div>
+    `;
+    document.body.appendChild(squadModalEl);
+    squadModalEl.querySelector('.tg-squad-modal-close').addEventListener('click', closeSquadModal);
+    squadModalEl.querySelector('.tg-squad-modal-backdrop').addEventListener('click', closeSquadModal);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && squadModalEl.classList.contains('tg-squad-modal-open')) {
+        closeSquadModal();
+      }
+    });
+    if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.BackButton) {
+      try {
+        window.Telegram.WebApp.BackButton.onClick(() => {
+          if (squadModalEl.classList.contains('tg-squad-modal-open')) {
+            closeSquadModal();
+          }
+        });
+      } catch (e) {
+        /* ignore */
+      }
+    }
+    return squadModalEl;
+  }
+
+  function closeSquadModal() {
+    if (!squadModalEl) return;
+    squadModalEl.classList.remove('tg-squad-modal-open');
+    squadModalEl.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('tg-squad-modal-body-lock');
+    if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.BackButton) {
+      try {
+        window.Telegram.WebApp.BackButton.hide();
+      } catch (e) {
+        /* ignore */
+      }
+    }
+  }
+
+  function openSquadModal(teamId) {
+    const team = findTeamById(teamId);
+    const entry = getSquadEntry(teamId);
+    ensureSquadModal();
+
+    const titleEl = squadModalEl.querySelector('#tg-squad-modal-title') || squadModalEl.querySelector('.tg-squad-modal-team');
+    const formationEl = squadModalEl.querySelector('#tg-squad-modal-formation');
+    const listsEl = squadModalEl.querySelector('#tg-squad-lists');
+
+    if (titleEl) {
+      titleEl.id = 'tg-squad-modal-title';
+      titleEl.innerHTML = team
+        ? `${renderFlagHtmlSimple(team)}<span class="tg-squad-modal-name">${team.name}</span><span class="tg-squad-modal-code">${team.id}</span>`
+        : `<span class="tg-squad-modal-name">Сборная</span>`;
+    }
+
+    if (!entry || !entry.players || !entry.players.length) {
+      formationEl.textContent = 'Состав пока не добавлен в squads.js';
+      listsEl.innerHTML = '';
+    } else {
+      const formation = entry.formation || '—';
+      const slots = FORMATION_SLOTS[formation];
+      formationEl.textContent = slots
+        ? `Схема ${formation}: ${slots.join(', ')}`
+        : `Схема ${formation}`;
+
+      const starters = entry.players.filter((p) => p.role === 'starter');
+      const bench = entry.players.filter((p) => p.role === 'bench');
+
+      listsEl.innerHTML = `
+        <section class="tg-squad-section">
+          <h3 class="tg-squad-section-title">Основа (${starters.length})</h3>
+          <ul class="tg-squad-player-list">${starters.map(renderSquadPlayerLi).join('')}</ul>
+        </section>
+        <section class="tg-squad-section">
+          <h3 class="tg-squad-section-title">Запас (${bench.length})</h3>
+          <ul class="tg-squad-player-list">${bench.map(renderSquadPlayerLi).join('')}</ul>
+        </section>
+      `;
+    }
+
+    squadModalEl.classList.add('tg-squad-modal-open');
+    squadModalEl.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('tg-squad-modal-body-lock');
+
+    if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.BackButton) {
+      try {
+        window.Telegram.WebApp.BackButton.show();
+      } catch (e) {
+        /* ignore */
+      }
+    }
+  }
+
+  function renderSquadPlayerLi(p) {
+    return `<li><span class="tg-squad-pos">${p.position}</span><span class="tg-squad-player-name">${p.name}</span></li>`;
+  }
+
+  function bindSquadOpenTriggers(container) {
+    const open = (teamId) => {
+      if (!teamId) return;
+      openSquadModal(teamId);
+    };
+
+    container.querySelectorAll('.team-squad-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        open(btn.dataset.teamId);
+      });
+    });
+
+    container.querySelectorAll('.standings-team').forEach((el) => {
+      el.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const row = el.closest('.team-card');
+        if (row) open(row.dataset.teamId);
+      });
+
+      let pressTimer = null;
+      const start = (e) => {
+        if (e.type === 'mousedown' && e.button !== 0) return;
+        const row = el.closest('.team-card');
+        if (!row) return;
+        const teamId = row.dataset.teamId;
+        pressTimer = window.setTimeout(() => {
+          pressTimer = null;
+          if (row) row.dataset.squadSuppressClick = '1';
+          open(teamId);
+        }, 520);
+      };
+      const cancel = () => {
+        if (pressTimer) {
+          clearTimeout(pressTimer);
+          pressTimer = null;
+        }
+      };
+      el.addEventListener('touchstart', start, { passive: true });
+      el.addEventListener('touchend', cancel);
+      el.addEventListener('touchcancel', cancel);
+      el.addEventListener('mousedown', start);
+      el.addEventListener('mouseup', cancel);
+      el.addEventListener('mouseleave', cancel);
+    });
   }
 
   function findTeamById(teamId) {
@@ -493,7 +668,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const subtitle = document.createElement('p');
     subtitle.className = 'tg-subtitle';
     subtitle.textContent =
-      'Перетаскивай команды внутри группы (1–4 места) и выбирай 8 лучших третьих.';
+      'Тап по команде — перестановка мест. Состав: кнопка 👕, двойной тап или удержание на названии.';
 
     const groupsGrid = document.createElement('div');
     groupsGrid.className = 'groups-grid';
@@ -508,7 +683,7 @@ document.addEventListener('DOMContentLoaded', () => {
       header.innerHTML = `
         <div>
           <div class="group-title">${group.name}</div>
-          <div class="group-subtitle">Перетащи команды в порядке 1–4 места</div>
+          <div class="group-subtitle">Тап — смена мест (1–4)</div>
         </div>
       `;
       card.appendChild(header);
@@ -528,10 +703,11 @@ document.addEventListener('DOMContentLoaded', () => {
         row.dataset.teamId = teamId;
         row.innerHTML = `
           <span class="team-position">${index + 1}</span>
-          <div class="standings-team">
+          <div class="standings-team" title="Удержание или двойной тап — состав">
             ${renderFlagHtmlSimple(team)}
             <span class="team-name">${team.name}</span>
           </div>
+          <button type="button" class="team-squad-btn" data-team-id="${teamId}" aria-label="Состав сборной" title="Состав">👕</button>
         `;
         list.appendChild(row);
       });
@@ -605,7 +781,13 @@ document.addEventListener('DOMContentLoaded', () => {
     container.appendChild(back);
     container.appendChild(title);
     container.appendChild(subtitle);
+    const squadHint = document.createElement('p');
+    squadHint.className = 'tg-hint tg-squad-hint';
+    squadHint.textContent =
+      'Состав откроется внизу экрана. Позже добавим поле и расстановку по схеме.';
+
     container.appendChild(groupsGrid);
+    container.appendChild(squadHint);
     container.appendChild(thirdsPanel);
 
     // Плей‑офф (нормальный режим) — появляется, когда выбраны 8 третьих мест
@@ -632,8 +814,14 @@ document.addEventListener('DOMContentLoaded', () => {
     let selectedTeamId = null;
     let selectedGroupId = null;
 
+    bindSquadOpenTriggers(groupsGrid);
+
     groupsGrid.querySelectorAll('.team-card').forEach((row) => {
       row.addEventListener('click', () => {
+        if (row.dataset.squadSuppressClick === '1') {
+          row.dataset.squadSuppressClick = '';
+          return;
+        }
         const teamId = row.dataset.teamId;
         const groupId = row.dataset.groupId;
 

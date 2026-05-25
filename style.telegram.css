@@ -36,7 +36,11 @@ body {
 
 .tg-screen {
   min-height: 100vh;
-  padding: 16px 16px 32px;
+  min-height: 100dvh;
+  padding: max(12px, env(safe-area-inset-top, 0px))
+    max(12px, env(safe-area-inset-right, 0px))
+    max(24px, env(safe-area-inset-bottom, 0px))
+    max(12px, env(safe-area-inset-left, 0px));
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -116,7 +120,8 @@ body {
 }
 
 .tg-level-screen {
-  max-width: 720px;
+  width: 100%;
+  max-width: 100%;
   margin: 0 auto;
 }
 
@@ -143,6 +148,38 @@ body {
   color: var(--muted);
 }
 
+/* Сетка групп (mobile-first: 1 колонка) */
+
+.groups-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.group-card {
+  background: radial-gradient(circle at top, #020617, #020617 40%, #000);
+  border-radius: 14px;
+  border: 1px solid rgba(31, 41, 55, 0.9);
+  padding: 10px;
+}
+
+.group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 6px;
+}
+
+.group-title {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.group-subtitle {
+  font-size: 11px;
+  color: var(--muted);
+}
+
 /* Общие элементы карточек команд / флагов */
 
 .group-teams-list {
@@ -157,6 +194,30 @@ body {
   align-items: center;
   gap: 6px;
   cursor: pointer;
+  touch-action: manipulation;
+}
+
+.team-squad-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.95);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.team-squad-btn:hover,
+.team-squad-btn:focus-visible {
+  border-color: var(--accent);
+  outline: none;
 }
 
 .team-card .team-position {
@@ -172,6 +233,8 @@ body {
 }
 
 .standings-team {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -360,5 +423,208 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+/* Модальное окно состава */
+
+.tg-squad-modal-body-lock {
+  overflow: hidden;
+}
+
+.tg-squad-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+.tg-squad-modal-open {
+  pointer-events: auto;
+  visibility: visible;
+  opacity: 1;
+}
+
+.tg-squad-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.72);
+}
+
+.tg-squad-modal-sheet {
+  position: relative;
+  width: 100%;
+  max-height: min(88vh, 88dvh);
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 16px 16px 0 0;
+  padding: 12px 14px max(16px, env(safe-area-inset-bottom, 0px));
+  transform: translateY(100%);
+  transition: transform 0.24s ease;
+}
+
+.tg-squad-modal-open .tg-squad-modal-sheet {
+  transform: translateY(0);
+}
+
+.tg-squad-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.tg-squad-modal-team {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.tg-squad-modal-name {
+  line-height: 1.2;
+}
+
+.tg-squad-modal-code {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.tg-squad-modal-close {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.9);
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tg-squad-modal-formation {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.tg-squad-pitch-placeholder {
+  border: 1px dashed rgba(34, 197, 94, 0.35);
+  border-radius: 12px;
+  background: rgba(34, 197, 94, 0.06);
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.tg-squad-section-title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tg-squad-player-list {
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.tg-squad-player-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(31, 41, 55, 0.6);
+}
+
+.tg-squad-pos {
+  flex-shrink: 0;
+  min-width: 36px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.tg-squad-player-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.tg-squad-hint {
+  margin-top: -4px;
+}
+
+/* Адаптив: от телефона к планшету и ПК */
+
+@media (min-width: 480px) {
+  .tg-screen {
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+
+  .groups-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .tg-title {
+    font-size: 26px;
+  }
+}
+
+@media (min-width: 720px) {
+  .tg-start-screen {
+    max-width: 960px;
+  }
+
+  .tg-level-screen {
+    max-width: 900px;
+  }
+
+  .groups-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .tg-squad-modal {
+    align-items: center;
+    padding: 24px;
+  }
+
+  .tg-squad-modal-sheet {
+    max-width: 520px;
+    border-radius: 16px;
+    max-height: min(85vh, 85dvh);
+  }
+
+  .tg-squad-modal-open .tg-squad-modal-sheet {
+    transform: translateY(0);
+  }
+}
+
+@media (min-width: 1024px) {
+  .tg-level-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
