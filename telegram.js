@@ -1024,7 +1024,55 @@ document.addEventListener('DOMContentLoaded', () => {
     a.remove();
   }
 
-  function openShareLink(kind) {
+  function tgAlert(message) {
+    const wa = window.Telegram && window.Telegram.WebApp;
+    if (wa && typeof wa.showAlert === 'function') {
+      wa.showAlert(message);
+      return;
+    }
+    alert(message);
+  }
+
+  async function posterDataUrlToFile(dataUrl) {
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    return new File([blob], 'wc26-result.png', { type: 'image/png' });
+  }
+
+  async function sharePosterAsImage() {
+    const dataUrl = createSharePosterDataUrl();
+    if (!dataUrl) return false;
+
+    const file = await posterDataUrlToFile(dataUrl);
+    const caption = getShareCaption();
+
+    if (navigator.share) {
+      try {
+        const payload = { files: [file], title: 'Симулятор ЧМ-2026', text: caption };
+        if (!navigator.canShare || navigator.canShare(payload)) {
+          await navigator.share(payload);
+          return true;
+        }
+      } catch (err) {
+        if (err && err.name === 'AbortError') return true;
+      }
+    }
+
+    try {
+      if (navigator.clipboard && window.ClipboardItem) {
+        const blob = await (await fetch(dataUrl)).blob();
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        tgAlert('Картинка скопирована. Вставь её в чат (долгое нажатие → Вставить).');
+        return true;
+      }
+    } catch (e) {
+      /* clipboard недоступен */
+    }
+
+    return false;
+  }
+
+  function openShareLinkFallback() {
     const text = encodeURIComponent(getShareCaption());
     const url = encodeURIComponent(window.location.origin + window.location.pathname);
     const shareUrl = `https://t.me/share/url?url=${url}&text=${text}`;
@@ -1034,6 +1082,23 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     window.open(shareUrl, '_blank');
+  }
+
+  async function openSharePoster(kind) {
+    if (kind === 'save') {
+      downloadSharePoster();
+      closeShareSheet();
+      return;
+    }
+
+    const shared = await sharePosterAsImage();
+    closeShareSheet();
+    if (shared) return;
+
+    openShareLinkFallback();
+    tgAlert(
+      'Картинку напрямую отправить не вышло. Отправлен текст со ссылкой — или нажми «Сохранить на устройство» и прикрепи PNG вручную.'
+    );
   }
 
   function closeShareSheet() {
@@ -1061,9 +1126,7 @@ document.addEventListener('DOMContentLoaded', () => {
     sheet.querySelector('[data-close="1"]').addEventListener('click', closeShareSheet);
     sheet.querySelectorAll('.tg-share-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
-        const kind = btn.dataset.shareKind;
-        if (kind === 'save') downloadSharePoster();
-        else openShareLink(kind);
+        openSharePoster(btn.dataset.shareKind);
       });
     });
   }
