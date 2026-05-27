@@ -34,8 +34,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (fromHub) {
       document.documentElement.classList.add('tg-webapp--hub');
-      // Из меню игр — сразу в симулятор, без экрана выбора режима
-      autoNormal = true;
     }
 
     launchContext.fromHub = fromHub;
@@ -68,24 +66,9 @@ document.addEventListener('DOMContentLoaded', () => {
   initTelegramEnvironment();
 
   const LEVELS = [
-    {
-      id: 'easy',
-      title: 'Лёгкий',
-      subtitle: 'Автосимуляция турнира',
-      description: 'Один клик — и мы сами просчитаем весь турнир: от групп до финала.',
-    },
-    {
-      id: 'normal',
-      title: 'Нормальный',
-      subtitle: 'Ручной выбор победителей',
-      description: 'Выбирай, кто проходит дальше в плей‑офф, без ввода счёта.',
-    },
-    {
-      id: 'hard',
-      title: 'Сложный',
-      subtitle: 'Полный контроль',
-      description: 'Стыки, группы и плей‑офф со счётом и таблицами — как в большой версии.',
-    },
+    { id: 'easy', title: 'Лёгкий', subtitle: 'Полная автоматическая симуляция' },
+    { id: 'normal', title: 'Нормальный', subtitle: 'Ручной выбор победителя матча' },
+    { id: 'hard', title: 'Сложный', subtitle: 'Настройка счёта и таблиц' },
   ];
 
   // Простое состояние для нормального режима (без localStorage)
@@ -117,6 +100,8 @@ document.addEventListener('DOMContentLoaded', () => {
     modeLabel: '',
     championName: '',
     finalScore: '',
+    lines: [],
+    poster: null,
   };
 
   /** % внутри playarea (= рамка разметки); 0/100 ≈ на боковой линии, чуть за край — наезд на линию */
@@ -627,62 +612,403 @@ document.addEventListener('DOMContentLoaded', () => {
       shareState.modeLabel = '';
       shareState.championName = '';
       shareState.finalScore = '';
+      shareState.lines = [];
+      shareState.poster = null;
       return;
     }
     shareState.available = true;
     shareState.modeLabel = payload.modeLabel || '';
     shareState.championName = payload.championName || '';
     shareState.finalScore = payload.finalScore || '';
+    shareState.lines = Array.isArray(payload.lines) ? payload.lines.slice(0, 6) : [];
+    shareState.poster = payload.poster || null;
   }
 
   function getShareCaption() {
     const champ = shareState.championName || '—';
     const scorePart = shareState.finalScore ? `\nФинал: ${shareState.finalScore}` : '';
-    return `Мой результат в симуляторе ЧМ-2026 (${shareState.modeLabel}):\nЧемпион — ${champ}${scorePart}\n\nСобери свой турнир в МЯЧ Играх.`;
+    const extra = shareState.lines.length ? `\n${shareState.lines.join('\n')}` : '';
+    return `Мой результат в симуляторе ЧМ-2026 (${shareState.modeLabel}):\nЧемпион — ${champ}${scorePart}${extra}\n\nСобери свой турнир в МЯЧ Играх.`;
+  }
+
+  function shortenName(name, maxLen) {
+    const n = String(name || '');
+    if (n.length <= maxLen) return n;
+    return `${n.slice(0, Math.max(1, maxLen - 1))}…`;
+  }
+
+  function buildGroupPosterData(standingsByGroup, withStats) {
+    return WORLD_CUP_2026_CONFIG.groups.map((group) => {
+      const rows = (standingsByGroup[group.id] || []).slice(0, 4).map((row, idx) => {
+        const team = findTeamById(row.teamId);
+        const gd = Number.isInteger(row.goalsFor) && Number.isInteger(row.goalsAgainst)
+          ? row.goalsFor - row.goalsAgainst
+          : null;
+        return {
+          pos: idx + 1,
+          teamName: team ? team.name : row.teamId,
+          points: Number.isInteger(row.points) ? row.points : null,
+          gd,
+        };
+      });
+      return { id: group.id, title: group.name, rows, withStats };
+    });
+  }
+
+  function buildKnockoutPosterData(rounds, winners, results) {
+    const defs = [
+      { id: 'R32', label: '1/16', total: 16 },
+      { id: 'R16', label: '1/8', total: 8 },
+      { id: 'QF', label: '1/4', total: 4 },
+      { id: 'SF', label: '1/2', total: 2 },
+      { id: 'FINAL', label: 'Финал', total: 1 },
+    ];
+    const stages = defs.map((d) => {
+      const list = rounds[d.id] || [];
+      const played = list.filter((m) => !!winners[m.id]).length;
+      return { label: d.label, played, total: d.total };
+    });
+
+    function teamNameById(teamId) {
+      const t = teamId ? findTeamById(teamId) : null;
+      return t ? t.name : '—';
+    }
+
+    function matchDisplay(match) {
+      const teams = getMatchTeamsNormal(match, rounds, winners);
+      const homeName = teamNameById(teams.homeId);
+      const awayName = teamNameById(teams.awayId);
+      const winnerId = winners[match.id] || null;
+      const winnerName = winnerId ? teamNameById(winnerId) : '';
+      const r = results && results[match.id] ? results[match.id] : null;
+      const score =
+        r && Number.isInteger(r.homeGoals) && Number.isInteger(r.awayGoals)
+          ? `${r.homeGoals}:${r.awayGoals}`
+          : '';
+      const homeScore = r && Number.isInteger(r.homeGoals) ? String(r.homeGoals) : '—';
+      const awayScore = r && Number.isInteger(r.awayGoals) ? String(r.awayGoals) : '—';
+      return {
+        homeName,
+        awayName,
+        winnerName,
+        label: winnerName || `${homeName}/${awayName}`,
+        score,
+        homeScore,
+        awayScore,
+      };
+    }
+
+    const left = {
+      R32: (rounds.R32 || []).slice(0, 8).map(matchDisplay),
+      R16: (rounds.R16 || []).slice(0, 4).map(matchDisplay),
+      QF: (rounds.QF || []).slice(0, 2).map(matchDisplay),
+      SF: (rounds.SF || []).slice(0, 1).map(matchDisplay),
+    };
+    const right = {
+      R32: (rounds.R32 || []).slice(8, 16).map(matchDisplay),
+      R16: (rounds.R16 || []).slice(4, 8).map(matchDisplay),
+      QF: (rounds.QF || []).slice(2, 4).map(matchDisplay),
+      SF: (rounds.SF || []).slice(1, 2).map(matchDisplay),
+    };
+
+    const finalMatch = rounds.FINAL && rounds.FINAL[0] ? rounds.FINAL[0] : null;
+    let finalistsLine = '';
+    let finalLabel = '';
+    let finalScore = '';
+    if (finalMatch) {
+      const t = getMatchTeamsNormal(finalMatch, rounds, winners);
+      const h = t.homeId ? findTeamById(t.homeId) : null;
+      const a = t.awayId ? findTeamById(t.awayId) : null;
+      if (h && a) finalistsLine = `${h.name} vs ${a.name}`;
+      const f = matchDisplay(finalMatch);
+      finalLabel = f.label;
+      finalScore = f.score;
+    }
+
+    const thirdMatch = rounds.THIRD && rounds.THIRD[0] ? rounds.THIRD[0] : null;
+    let thirdLine = '';
+    let thirdDisplay = null;
+    if (thirdMatch) {
+      const t3 = getMatchTeamsNormal(thirdMatch, rounds, winners);
+      const h3 = t3.homeId ? findTeamById(t3.homeId) : null;
+      const a3 = t3.awayId ? findTeamById(t3.awayId) : null;
+      if (h3 && a3) {
+        const r3 = results && results[thirdMatch.id] ? results[thirdMatch.id] : null;
+        const score3 =
+          r3 && Number.isInteger(r3.homeGoals) && Number.isInteger(r3.awayGoals)
+            ? ` (${r3.homeGoals}:${r3.awayGoals})`
+            : '';
+        thirdLine = `${h3.name} vs ${a3.name}${score3}`;
+      }
+      thirdDisplay = matchDisplay(thirdMatch);
+    }
+
+    return { stages, finalistsLine, thirdLine, left, right, finalLabel, finalScore, thirdDisplay };
   }
 
   function createSharePosterDataUrl() {
     const canvas = document.createElement('canvas');
     canvas.width = 1080;
-    canvas.height = 1350;
+    canvas.height = 1920;
     const ctx = canvas.getContext('2d');
     if (!ctx) return '';
 
+    function roundedRect(x, y, w, h, r, fill, stroke) {
+      const rr = Math.min(r, w / 2, h / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + rr, y);
+      ctx.lineTo(x + w - rr, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + rr);
+      ctx.lineTo(x + w, y + h - rr);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
+      ctx.lineTo(x + rr, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - rr);
+      ctx.lineTo(x, y + rr);
+      ctx.quadraticCurveTo(x, y, x + rr, y);
+      ctx.closePath();
+      if (fill) {
+        ctx.fillStyle = fill;
+        ctx.fill();
+      }
+      if (stroke) {
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+
     const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    grad.addColorStop(0, '#2a16d9');
-    grad.addColorStop(1, '#0a1f80');
+    grad.addColorStop(0, '#3a18e0');
+    grad.addColorStop(1, '#081a72');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    roundedRect(36, 36, 1008, 1848, 36, 'rgba(6,20,102,0.42)', 'rgba(95,140,255,0.45)');
+
     ctx.fillStyle = '#ffffff';
-    ctx.font = '700 62px system-ui, Segoe UI, Arial';
-    ctx.fillText('СИМУЛЯТОР ЧМ-2026', 70, 130);
+    ctx.font = '800 56px system-ui, Segoe UI, Arial';
+    ctx.fillText('СИМУЛЯТОР ЧМ-2026', 72, 122);
 
-    ctx.fillStyle = '#9ad7ff';
-    ctx.font = '600 36px system-ui, Segoe UI, Arial';
-    ctx.fillText(shareState.modeLabel || 'Режим', 70, 190);
-
+    // Секция 1: Победитель
+    roundedRect(72, 168, 936, 220, 24, 'rgba(8,33,130,0.9)', 'rgba(120,166,255,0.62)');
     ctx.fillStyle = '#ffd34d';
-    ctx.font = '700 40px system-ui, Segoe UI, Arial';
-    ctx.fillText('ЧЕМПИОН МИРА', 70, 310);
-
+    ctx.font = '800 44px system-ui, Segoe UI, Arial';
+    ctx.fillText('ЧЕМПИОН МИРА', 108, 244);
     ctx.fillStyle = '#ffffff';
-    ctx.font = '800 84px system-ui, Segoe UI, Arial';
-    ctx.fillText((shareState.championName || '—').toUpperCase(), 70, 400);
+    ctx.font = '900 86px system-ui, Segoe UI, Arial';
+    const champ = (shareState.championName || '—').toUpperCase();
+    ctx.fillText(champ, 108, 336);
+
+    // Секция 2: Плей-офф
+    const ko = shareState.poster && shareState.poster.knockout ? shareState.poster.knockout : null;
+    roundedRect(72, 410, 936, 760, 24, 'rgba(8,33,130,0.78)', 'rgba(120,166,255,0.5)');
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '800 38px system-ui, Segoe UI, Arial';
+    ctx.fillText('ПЛЕЙ-ОФФ', 108, 476);
+
+    const bracketCardW = 124;
+    const bracketCardH = 34;
+    const bracketOuterL = 84;
+    const bracketOuterR = 872;
+    const bracketCenterX = 540;
+    const bracketInnerGap = 32;
+    const r32Top = 504;
+    const r32Bottom = 1158;
+    const r32Step = (r32Bottom - r32Top - bracketCardH) / 7;
+
+    function yR32(i) {
+      return r32Top + i * r32Step;
+    }
+
+    function yMidPair(yA, yB) {
+      return (yA + yB) / 2;
+    }
+
+    function bracketColumns(outerL, outerR, innerL, innerR, count) {
+      const xs = [];
+      for (let i = 0; i < count; i++) {
+        const t = count === 1 ? 0 : i / (count - 1);
+        xs.push(Math.round(outerL + (innerL - outerL) * t));
+      }
+      const xsR = [];
+      for (let i = 0; i < count; i++) {
+        const t = count === 1 ? 0 : i / (count - 1);
+        xsR.push(Math.round(outerR + (innerR - outerR) * t));
+      }
+      return { left: xs, right: xsR };
+    }
+
+    const innerLeftX = bracketCenterX - bracketCardW - bracketInnerGap;
+    const innerRightX = bracketCenterX + bracketInnerGap;
+    const bracketCols = bracketColumns(
+      bracketOuterL,
+      bracketOuterR,
+      innerLeftX,
+      innerRightX,
+      4
+    );
+
+    function drawMatchCard(x, y, w, h, item) {
+      roundedRect(x, y, w, h, 10, 'rgba(24,72,210,0.45)', 'rgba(120,166,255,0.32)');
+      const teamA = shortenName(item && item.homeName ? item.homeName : '—', 12);
+      const teamB = shortenName(item && item.awayName ? item.awayName : '—', 12);
+      const scoreA = item && item.homeScore ? item.homeScore : '—';
+      const scoreB = item && item.awayScore ? item.awayScore : '—';
+
+      const scoreColW = 20;
+      const textX = x + 6;
+      const textW = Math.max(28, w - scoreColW - 14);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '600 12px system-ui, Segoe UI, Arial';
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(textX, y + 4, textW, h - 8);
+      ctx.clip();
+      ctx.fillText(teamA, textX, y + 14);
+      ctx.fillText(teamB, textX, y + 28);
+      ctx.restore();
+
+      ctx.fillStyle = '#9fd6ff';
+      ctx.font = '800 12px system-ui, Segoe UI, Arial';
+      const swA = ctx.measureText(scoreA).width;
+      const swB = ctx.measureText(scoreB).width;
+      ctx.fillText(scoreA, x + w - swA - 6, y + 14);
+      ctx.fillText(scoreB, x + w - swB - 6, y + 28);
+      return { x, y, w, h, cy: y + h / 2, item };
+    }
+
+    function drawRoundAt(x, items, yList) {
+      const out = [];
+      const list = Array.isArray(items) ? items : [];
+      list.forEach((item, i) => {
+        const y = yList[Math.min(i, yList.length - 1)];
+        out.push(drawMatchCard(x, y, bracketCardW, bracketCardH, item));
+      });
+      return out;
+    }
+
+    const leftX = bracketCols.left;
+    const rightX = bracketCols.right;
+
+    const r32Ys = Array.from({ length: 8 }, (_, i) => yR32(i));
+    const r16Ys = [0, 1, 2, 3].map((i) => yMidPair(r32Ys[i * 2], r32Ys[i * 2 + 1]));
+    const qfYs = [0, 1].map((i) => yMidPair(r16Ys[i * 2], r16Ys[i * 2 + 1]));
+    const sfY = yMidPair(qfYs[0], qfYs[1]);
+
+    const leftR32 = drawRoundAt(leftX[0], ko && ko.left && ko.left.R32, r32Ys);
+    const leftR16 = drawRoundAt(leftX[1], ko && ko.left && ko.left.R16, r16Ys);
+    const leftQF = drawRoundAt(leftX[2], ko && ko.left && ko.left.QF, qfYs);
+    const leftSF = drawRoundAt(leftX[3], ko && ko.left && ko.left.SF, [sfY]);
+    const rightR32 = drawRoundAt(rightX[0], ko && ko.right && ko.right.R32, r32Ys);
+    const rightR16 = drawRoundAt(rightX[1], ko && ko.right && ko.right.R16, r16Ys);
+    const rightQF = drawRoundAt(rightX[2], ko && ko.right && ko.right.QF, qfYs);
+    const rightSF = drawRoundAt(rightX[3], ko && ko.right && ko.right.SF, [sfY]);
+
+    function connectPolyline(points, stroke) {
+      if (!Array.isArray(points) || points.length < 2) return;
+      ctx.strokeStyle = stroke || 'rgba(140,182,255,0.55)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) {
+        ctx.lineTo(points[i].x, points[i].y);
+      }
+      ctx.stroke();
+    }
+
+    // Линии в PNG отключены: оставляем только карточки.
+
+    const finalCardH = 46;
+    const finalCardW = 220;
+    const finalsGapY = 110;
+    const finalY = sfY - finalsGapY - finalCardH;
+    const finalNode = drawMatchCard(
+      Math.round(bracketCenterX - finalCardW / 2),
+      finalY,
+      finalCardW,
+      finalCardH,
+      {
+      homeName: ko && ko.finalistsLine ? ko.finalistsLine.split(' vs ')[0] : '—',
+      awayName: ko && ko.finalistsLine ? ko.finalistsLine.split(' vs ')[1] : '—',
+      homeScore:
+        ko && ko.finalScore && ko.finalScore.includes(':')
+          ? ko.finalScore.split(':')[0]
+          : '—',
+      awayScore:
+        ko && ko.finalScore && ko.finalScore.includes(':')
+          ? ko.finalScore.split(':')[1]
+          : '—',
+      }
+    );
+    const third = ko && ko.thirdDisplay ? ko.thirdDisplay : null;
+    const thirdNode = drawMatchCard(
+      Math.round(bracketCenterX - finalCardW / 2),
+      sfY + finalsGapY,
+      finalCardW,
+      finalCardH,
+      {
+      homeName: third ? third.homeName : '—',
+      awayName: third ? third.awayName : '—',
+      homeScore:
+        third && third.score && third.score.includes(':') ? third.score.split(':')[0] : '—',
+      awayScore:
+        third && third.score && third.score.includes(':') ? third.score.split(':')[1] : '—',
+      }
+    );
+
+    // Центр также без линий.
+
+    // Секция 3: Группы
+    const groups = shareState.poster && Array.isArray(shareState.poster.groups)
+      ? shareState.poster.groups
+      : [];
+    roundedRect(72, 1260, 936, 470, 24, 'rgba(8,33,130,0.78)', 'rgba(120,166,255,0.5)');
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '800 38px system-ui, Segoe UI, Arial';
+    ctx.fillText('ГРУППЫ', 108, 1322);
+
+    const cols = 4;
+    const gap = 12;
+    const cardW = Math.floor((936 - gap * (cols - 1) - 18) / cols);
+    const cardH = 124;
+    const baseX = 88;
+    const groupsBaseY = 1334;
+
+    groups.slice(0, 12).forEach((g, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = baseX + col * (cardW + gap);
+      const y = groupsBaseY + row * (cardH + 12);
+      roundedRect(x, y, cardW, cardH, 14, 'rgba(24,72,210,0.35)', 'rgba(120,166,255,0.35)');
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '700 18px system-ui, Segoe UI, Arial';
+      ctx.fillText(shortenName(g.title || g.id, 12), x + 8, y + 24);
+      const rows = Array.isArray(g.rows) ? g.rows.slice(0, 4) : [];
+      rows.forEach((r, ri) => {
+        const yy = y + 42 + ri * 20;
+        ctx.fillStyle = '#cfe4ff';
+        ctx.font = '600 14px system-ui, Segoe UI, Arial';
+        ctx.fillText(`${r.pos}.`, x + 6, yy);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(shortenName(r.teamName, 16), x + 20, yy);
+        if (g.withStats && Number.isInteger(r.points)) {
+          ctx.fillStyle = '#9fd6ff';
+          ctx.font = '700 14px system-ui, Segoe UI, Arial';
+          const ptsText = String(r.points);
+          const tw = ctx.measureText(ptsText).width;
+          ctx.fillText(ptsText, x + cardW - tw - 8, yy);
+        }
+      });
+    });
 
     ctx.fillStyle = '#dbe9ff';
-    ctx.font = '600 42px system-ui, Segoe UI, Arial';
-    const finalText = shareState.finalScore ? `Финал: ${shareState.finalScore}` : 'Турнир завершён';
-    ctx.fillText(finalText, 70, 485);
-
-    ctx.fillStyle = 'rgba(255,255,255,0.12)';
-    ctx.fillRect(70, 560, 940, 2);
+    roundedRect(72, 1770, 936, 98, 22, 'rgba(6,25,100,0.86)', 'rgba(120,166,255,0.45)');
     ctx.fillStyle = '#ffffff';
-    ctx.font = '600 34px system-ui, Segoe UI, Arial';
-    ctx.fillText('Собери свой турнир в МЯЧ Играх', 70, 630);
-    ctx.font = '500 28px system-ui, Segoe UI, Arial';
+    ctx.font = '700 34px system-ui, Segoe UI, Arial';
+    ctx.fillText('Собери свой турнир в МЯЧ Играх', 108, 1820);
+    ctx.font = '600 30px system-ui, Segoe UI, Arial';
     ctx.fillStyle = '#c7d8ff';
-    ctx.fillText('@myach_games_bot', 70, 680);
+    ctx.fillText('@myach_games_bot', 108, 1852);
 
     return canvas.toDataURL('image/png');
   }
@@ -742,6 +1068,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function ensureStageNavActions(stageNav) {
+    let actions = stageNav.querySelector('.tg-stage-nav-actions');
+    if (!actions) {
+      actions = document.createElement('div');
+      actions.className = 'tg-stage-nav-actions';
+      stageNav.appendChild(actions);
+    }
+    return actions;
+  }
+
   function maybeAppendShareButton(stageNav) {
     if (!shareState.available) return;
     const btn = document.createElement('button');
@@ -749,7 +1085,149 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.className = 'tg-back-button tg-share-open-button';
     btn.textContent = 'Поделиться';
     btn.addEventListener('click', openShareSheet);
-    stageNav.appendChild(btn);
+    ensureStageNavActions(stageNav).appendChild(btn);
+  }
+
+  function buildTournamentStats(groupMatches, rounds, knockoutResults, knockoutWinners) {
+    const byTeam = {};
+    const bump = (teamId, gf, ga) => {
+      if (!teamId) return;
+      if (!byTeam[teamId]) byTeam[teamId] = { gf: 0, ga: 0, played: 0 };
+      byTeam[teamId].gf += gf;
+      byTeam[teamId].ga += ga;
+      byTeam[teamId].played += 1;
+    };
+    const addMatch = (homeId, awayId, hg, ag) => {
+      if (!homeId || !awayId || !Number.isInteger(hg) || !Number.isInteger(ag)) return;
+      bump(homeId, hg, ag);
+      bump(awayId, ag, hg);
+    };
+
+    (groupMatches || []).forEach((m) => addMatch(m.homeTeamId, m.awayTeamId, m.homeGoals, m.awayGoals));
+
+    const roundIds = ['R32', 'R16', 'QF', 'SF', 'FINAL', 'THIRD'];
+    for (const rid of roundIds) {
+      for (const match of (rounds && rounds[rid]) || []) {
+        const res = knockoutResults && knockoutResults[match.id];
+        if (!res || !Number.isInteger(res.homeGoals) || !Number.isInteger(res.awayGoals)) continue;
+        const teams = getMatchTeamsNormal(match, rounds, knockoutWinners || {});
+        addMatch(teams.homeId, teams.awayId, res.homeGoals, res.awayGoals);
+      }
+    }
+
+    const rows = Object.keys(byTeam).map((id) => ({
+      teamId: id,
+      gf: byTeam[id].gf,
+      ga: byTeam[id].ga,
+      gd: byTeam[id].gf - byTeam[id].ga,
+      played: byTeam[id].played,
+    }));
+    if (!rows.length) return null;
+
+    const bestAttackRow = rows.slice().sort((a, b) => b.gf - a.gf || b.gd - a.gd)[0];
+    const bestDefenseRow = rows
+      .filter((r) => r.played > 0)
+      .sort((a, b) => a.ga - b.ga || b.gd - a.gd)[0];
+
+    let topMatch = null;
+    let totalGoals = 0;
+    let matchCount = 0;
+
+    function considerTop(homeId, awayId, hg, ag) {
+      if (!homeId || !awayId || !Number.isInteger(hg) || !Number.isInteger(ag)) return;
+      const total = hg + ag;
+      totalGoals += total;
+      matchCount += 1;
+      if (!topMatch || total > topMatch.total) {
+        topMatch = { homeId, awayId, hg, ag, total };
+      }
+    }
+
+    (groupMatches || []).forEach((m) =>
+      considerTop(m.homeTeamId, m.awayTeamId, m.homeGoals, m.awayGoals)
+    );
+    for (const rid of roundIds) {
+      for (const match of (rounds && rounds[rid]) || []) {
+        const res = knockoutResults && knockoutResults[match.id];
+        if (!res || !Number.isInteger(res.homeGoals) || !Number.isInteger(res.awayGoals)) continue;
+        const teams = getMatchTeamsNormal(match, rounds, knockoutWinners || {});
+        considerTop(teams.homeId, teams.awayId, res.homeGoals, res.awayGoals);
+      }
+    }
+
+    const bestAttackTeam = bestAttackRow ? findTeamById(bestAttackRow.teamId) : null;
+    const bestDefenseTeam = bestDefenseRow ? findTeamById(bestDefenseRow.teamId) : null;
+    const topHome = topMatch ? findTeamById(topMatch.homeId) : null;
+    const topAway = topMatch ? findTeamById(topMatch.awayId) : null;
+
+    return {
+      bestAttack: bestAttackTeam
+        ? { name: bestAttackTeam.name, value: `${bestAttackRow.gf} гола` }
+        : null,
+      bestDefense: bestDefenseTeam
+        ? { name: bestDefenseTeam.name, value: `${bestDefenseRow.ga} пропущено` }
+        : null,
+      topMatch:
+        topHome && topAway
+          ? {
+              label: `${topHome.name} — ${topAway.name}`,
+              value: `${topMatch.hg}:${topMatch.ag} (${topMatch.total} голов)`,
+            }
+          : null,
+      summary: `${matchCount} матчей · ${totalGoals} голов`,
+    };
+  }
+
+  function closeStatsSheet() {
+    const el = document.querySelector('.tg-stats-sheet');
+    if (el) el.remove();
+  }
+
+  function openStatsSheet(stats) {
+    if (!stats) return;
+    closeStatsSheet();
+    const sheet = document.createElement('div');
+    sheet.className = 'tg-stats-sheet';
+    const rows = [
+      { title: 'Лучшая атака', item: stats.bestAttack },
+      { title: 'Лучшая защита', item: stats.bestDefense },
+      { title: 'Самый результативный матч', item: stats.topMatch },
+    ];
+    const body = rows
+      .filter((r) => r.item)
+      .map(
+        (r) => `
+        <div class="tg-stats-row">
+          <div class="tg-stats-row-title">${r.title}</div>
+          <div class="tg-stats-row-main">${r.item.name || r.item.label}</div>
+          <div class="tg-stats-row-sub">${r.item.value}</div>
+        </div>`
+      )
+      .join('');
+
+    sheet.innerHTML = `
+      <div class="tg-stats-backdrop" data-close="1"></div>
+      <div class="tg-stats-panel">
+        <div class="tg-stats-title">Статистика турнира</div>
+        <div class="tg-stats-summary">${stats.summary || ''}</div>
+        <div class="tg-stats-list">${body || '<div class="tg-stats-empty">Нет данных</div>'}</div>
+        <button type="button" class="tg-stats-close" data-close="1">Закрыть</button>
+      </div>
+    `;
+    document.body.appendChild(sheet);
+    sheet.querySelectorAll('[data-close="1"]').forEach((el) => {
+      el.addEventListener('click', closeStatsSheet);
+    });
+  }
+
+  function maybeAppendStatsButton(stageNav, stats) {
+    if (!stats) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'tg-back-button tg-stats-open-button';
+    btn.textContent = 'Статистика';
+    btn.addEventListener('click', () => openStatsSheet(stats));
+    ensureStageNavActions(stageNav).appendChild(btn);
   }
 
   function createGroupMatchesForGroup(group) {
@@ -1270,14 +1748,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function renderKoMatchCard(match, rounds, viewId, opts) {
     const locked = !!(opts && opts.locked);
-    const teams = getMatchTeamsNormal(match, rounds, normalState.knockoutWinners);
-    const homeTeam = teams.homeId ? findTeamById(teams.homeId) : null;
-    const awayTeam = teams.awayId ? findTeamById(teams.awayId) : null;
+        const teams = getMatchTeamsNormal(match, rounds, normalState.knockoutWinners);
+        const homeTeam = teams.homeId ? findTeamById(teams.homeId) : null;
+        const awayTeam = teams.awayId ? findTeamById(teams.awayId) : null;
 
-    const card = document.createElement('div');
-    card.className = 'tg-ko-match';
+        const card = document.createElement('div');
+        card.className = 'tg-ko-match';
 
-    function makeRow(team) {
+        function makeRow(team) {
       const row = document.createElement('div');
       row.className = 'tg-ko-team-row';
 
@@ -1301,38 +1779,38 @@ document.addEventListener('DOMContentLoaded', () => {
         row.appendChild(spacer);
       }
 
-      const btn = document.createElement('button');
+          const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'tg-ko-team';
-      if (!team) {
-        btn.disabled = true;
-        btn.textContent = '—';
+          btn.className = 'tg-ko-team';
+          if (!team) {
+            btn.disabled = true;
+            btn.textContent = '—';
         row.appendChild(btn);
         return row;
-      }
+          }
 
-      const isWinner = normalState.knockoutWinners[match.id] === team.id;
-      if (isWinner) btn.classList.add('tg-ko-team-winner');
-      btn.innerHTML = `
-        <span class="flag-wrap">${renderFlagHtmlSimple(team)}</span>
-        <span class="team-name">${team.name}</span>
-        <span class="tg-ko-pick">✓</span>
-      `;
-      btn.addEventListener('click', (e) => {
+          const isWinner = normalState.knockoutWinners[match.id] === team.id;
+          if (isWinner) btn.classList.add('tg-ko-team-winner');
+          btn.innerHTML = `
+            <span class="flag-wrap">${renderFlagHtmlSimple(team)}</span>
+            <span class="team-name">${team.name}</span>
+            <span class="tg-ko-pick">✓</span>
+          `;
+          btn.addEventListener('click', (e) => {
         if (locked) return;
-        const gridEl = document.querySelector('.tg-ko-grid');
-        const scrollLeft = gridEl ? gridEl.scrollLeft : 0;
-        normalState.knockoutWinners[match.id] = team.id;
-        renderNormalMode();
-        const newGrid = document.querySelector('.tg-ko-grid');
-        if (newGrid) newGrid.scrollLeft = scrollLeft;
-      });
+            const gridEl = document.querySelector('.tg-ko-grid');
+            const scrollLeft = gridEl ? gridEl.scrollLeft : 0;
+            normalState.knockoutWinners[match.id] = team.id;
+            renderNormalMode();
+            const newGrid = document.querySelector('.tg-ko-grid');
+            if (newGrid) newGrid.scrollLeft = scrollLeft;
+          });
       row.appendChild(btn);
       return row;
-    }
+        }
 
-    card.appendChild(makeRow(homeTeam));
-    card.appendChild(makeRow(awayTeam));
+        card.appendChild(makeRow(homeTeam));
+        card.appendChild(makeRow(awayTeam));
 
     return card;
   }
@@ -1588,11 +2066,38 @@ document.addEventListener('DOMContentLoaded', () => {
       ? normalState.knockoutWinners[normalFinalMatch.id]
       : null;
     const normalChampion = normalChampionId ? findTeamById(normalChampionId) : null;
+    const normalFinalTeams = normalFinalMatch
+      ? getMatchTeamsNormal(normalFinalMatch, bracket, normalState.knockoutWinners)
+      : { homeId: null, awayId: null };
+    const normalHomeFinal = normalFinalTeams.homeId ? findTeamById(normalFinalTeams.homeId) : null;
+    const normalAwayFinal = normalFinalTeams.awayId ? findTeamById(normalFinalTeams.awayId) : null;
     setShareState({
       available: normalComplete,
       modeLabel: 'Нормальный',
       championName: normalChampion ? normalChampion.name : '',
       finalScore: '',
+      lines:
+        normalComplete && normalHomeFinal && normalAwayFinal
+          ? [`Финалисты: ${normalHomeFinal.name} vs ${normalAwayFinal.name}`]
+          : [],
+      poster: {
+        groups: buildGroupPosterData(
+          Object.fromEntries(
+            WORLD_CUP_2026_CONFIG.groups.map((g) => [
+              g.id,
+              (normalState.groupOrder[g.id] || []).map((teamId, idx) => ({
+                teamId,
+                points: null,
+                goalsFor: null,
+                goalsAgainst: null,
+                place: idx + 1,
+              })),
+            ])
+          ),
+          false
+        ),
+        knockout: buildKnockoutPosterData(bracket, normalState.knockoutWinners, {}),
+      },
     });
 
     if (normalState.stage !== 'groups' && selected.length !== 8) {
@@ -1674,38 +2179,11 @@ document.addEventListener('DOMContentLoaded', () => {
     stageNav.appendChild(leftBtn);
     if (showRight) stageNav.appendChild(rightBtn);
     maybeAppendShareButton(stageNav);
-    const data = easyState.data;
-    const easyFinalMatch = data && data.rounds && data.rounds.FINAL ? data.rounds.FINAL[0] : null;
-    const easyComplete = !!(
-      easyFinalMatch &&
-      data &&
-      data.knockoutWinners &&
-      data.knockoutWinners[easyFinalMatch.id]
-    );
-    const easyChampionId = easyComplete ? data.knockoutWinners[easyFinalMatch.id] : null;
-    const easyChampion = easyChampionId ? findTeamById(easyChampionId) : null;
-    const easyFinalRes =
-      easyFinalMatch && data && data.knockoutResults
-        ? data.knockoutResults[easyFinalMatch.id]
-        : null;
-    const easyFinalScore =
-      easyFinalRes &&
-      Number.isInteger(easyFinalRes.homeGoals) &&
-      Number.isInteger(easyFinalRes.awayGoals)
-        ? `${easyFinalRes.homeGoals}:${easyFinalRes.awayGoals}`
-        : '';
-    setShareState({
-      available: easyComplete,
-      modeLabel: 'Лёгкий',
-      championName: easyChampion ? easyChampion.name : '',
-      finalScore: easyFinalScore,
-    });
-    maybeAppendShareButton(stageNav);
     container.appendChild(stageNav);
 
     if (normalState.stage === 'groups') {
-      container.appendChild(groupsGrid);
-      container.appendChild(thirdsPanel);
+    container.appendChild(groupsGrid);
+    container.appendChild(thirdsPanel);
     } else if (playoffsReady) {
       const koWrapper = document.createElement('div');
       koWrapper.className = 'tg-ko-wrapper';
@@ -2418,11 +2896,24 @@ document.addEventListener('DOMContentLoaded', () => {
       Number.isInteger(hardFinalResult.awayGoals)
         ? `${hardFinalResult.homeGoals}:${hardFinalResult.awayGoals}`
         : '';
+    const hardFinalTeams = hardFinalMatch
+      ? getMatchTeamsNormal(hardFinalMatch, rounds, winners)
+      : { homeId: null, awayId: null };
+    const hardFinalHome = hardFinalTeams.homeId ? findTeamById(hardFinalTeams.homeId) : null;
+    const hardFinalAway = hardFinalTeams.awayId ? findTeamById(hardFinalTeams.awayId) : null;
     setShareState({
       available: hardComplete,
       modeLabel: 'Сложный',
       championName: hardChampion ? hardChampion.name : '',
       finalScore: hardFinalScore,
+      lines:
+        hardComplete && hardFinalHome && hardFinalAway
+          ? [`Финалисты: ${hardFinalHome.name} vs ${hardFinalAway.name}`]
+          : [],
+      poster: {
+        groups: buildGroupPosterData(standingsByGroup, true),
+        knockout: buildKnockoutPosterData(rounds, winners, hardState.knockoutResults),
+      },
     });
 
     const container = document.createElement('div');
@@ -2493,6 +2984,19 @@ document.addEventListener('DOMContentLoaded', () => {
     stageNav.appendChild(leftBtn);
     if (showRight) stageNav.appendChild(rightBtn);
     maybeAppendShareButton(stageNav);
+    if (hardComplete) {
+      const hardGroupMatches = [];
+      for (const group of WORLD_CUP_2026_CONFIG.groups) {
+        hardGroupMatches.push(...(hardState.groupMatchesByGroup[group.id] || []));
+      }
+      const hardStats = buildTournamentStats(
+        hardGroupMatches,
+        rounds,
+        hardState.knockoutResults,
+        winners
+      );
+      maybeAppendStatsButton(stageNav, hardStats);
+    }
     container.appendChild(stageNav);
 
     if (hardState.stage === 'groups') {
@@ -2570,6 +3074,50 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function renderEasyMode() {
     root.innerHTML = '';
+    const data = easyState.data;
+    const easyFinalMatch = data && data.rounds && data.rounds.FINAL ? data.rounds.FINAL[0] : null;
+    const easyComplete = !!(
+      easyFinalMatch &&
+      data &&
+      data.knockoutWinners &&
+      data.knockoutWinners[easyFinalMatch.id]
+    );
+    const easyChampionId = easyComplete ? data.knockoutWinners[easyFinalMatch.id] : null;
+    const easyChampion = easyChampionId ? findTeamById(easyChampionId) : null;
+    const easyFinalRes =
+      easyFinalMatch && data && data.knockoutResults
+        ? data.knockoutResults[easyFinalMatch.id]
+        : null;
+    const easyFinalScore =
+      easyFinalRes &&
+      Number.isInteger(easyFinalRes.homeGoals) &&
+      Number.isInteger(easyFinalRes.awayGoals)
+        ? `${easyFinalRes.homeGoals}:${easyFinalRes.awayGoals}`
+        : '';
+    const easyFinalTeams =
+      easyFinalMatch && data && data.knockoutWinners
+        ? getMatchTeamsNormal(easyFinalMatch, data.rounds, data.knockoutWinners)
+        : { homeId: null, awayId: null };
+    const easyFinalHome = easyFinalTeams.homeId ? findTeamById(easyFinalTeams.homeId) : null;
+    const easyFinalAway = easyFinalTeams.awayId ? findTeamById(easyFinalTeams.awayId) : null;
+    setShareState({
+      available: easyComplete,
+      modeLabel: 'Лёгкий',
+      championName: easyChampion ? easyChampion.name : '',
+      finalScore: easyFinalScore,
+      lines:
+        easyComplete && easyFinalHome && easyFinalAway
+          ? [`Финалисты: ${easyFinalHome.name} vs ${easyFinalAway.name}`]
+          : [],
+      poster: {
+        groups: buildGroupPosterData(data ? data.standingsByGroup || {} : {}, true),
+        knockout: buildKnockoutPosterData(
+          data && data.rounds ? data.rounds : { R32: [], R16: [], QF: [], SF: [], FINAL: [], THIRD: [] },
+          data && data.knockoutWinners ? data.knockoutWinners : {},
+          data && data.knockoutResults ? data.knockoutResults : {}
+        ),
+      },
+    });
 
     const container = document.createElement('div');
     container.className =
@@ -2598,6 +3146,16 @@ document.addEventListener('DOMContentLoaded', () => {
       stageNav.appendChild(againBtn);
     }
 
+    maybeAppendShareButton(stageNav);
+    if (easyComplete && data) {
+      const easyStats = buildTournamentStats(
+        data.groupMatches || [],
+        data.rounds,
+        data.knockoutResults || {},
+        data.knockoutWinners || {}
+      );
+      maybeAppendStatsButton(stageNav, easyStats);
+    }
     container.appendChild(stageNav);
 
     if (easyState.simulated) {
@@ -2681,6 +3239,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const container = document.createElement('div');
     container.className = 'tg-screen tg-start-screen';
 
+    if (launchContext.fromHub) {
+      const hubBack = document.createElement('button');
+      hubBack.type = 'button';
+      hubBack.className = 'tg-back-button tg-start-hub-back';
+      hubBack.textContent = '← К списку игр';
+      hubBack.addEventListener('click', exitAppOrMenu);
+      container.appendChild(hubBack);
+    }
+
     const header = document.createElement('div');
     header.className = 'tg-header';
 
@@ -2688,12 +3255,7 @@ document.addEventListener('DOMContentLoaded', () => {
     title.className = 'tg-title';
     title.textContent = 'Симулятор ЧМ‑2026';
 
-    const subtitle = document.createElement('p');
-    subtitle.className = 'tg-subtitle';
-    subtitle.textContent = 'Выбери уровень сложности, с которого хочешь начать.';
-
     header.appendChild(title);
-    header.appendChild(subtitle);
 
     const grid = document.createElement('div');
     grid.className = 'tg-level-grid';
@@ -2709,17 +3271,13 @@ document.addEventListener('DOMContentLoaded', () => {
       lvlTitle.className = 'tg-level-title';
       lvlTitle.textContent = level.title;
 
-      const lvlSubtitle = document.createElement('div');
-      lvlSubtitle.className = 'tg-level-subtitle';
-      lvlSubtitle.textContent = level.subtitle;
-
-      const lvlDesc = document.createElement('div');
-      lvlDesc.className = 'tg-level-description';
-      lvlDesc.textContent = level.description;
-
       card.appendChild(lvlTitle);
-      card.appendChild(lvlSubtitle);
-      card.appendChild(lvlDesc);
+      if (level.subtitle) {
+        const lvlSubtitle = document.createElement('div');
+        lvlSubtitle.className = 'tg-level-subtitle';
+        lvlSubtitle.textContent = level.subtitle;
+        card.appendChild(lvlSubtitle);
+      }
 
       if (!level.disabled) {
         card.addEventListener('click', () => renderLevelStub(level));
