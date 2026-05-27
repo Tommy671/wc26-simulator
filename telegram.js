@@ -16,9 +16,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let autoNormal = params.get('mode') === 'normal';
 
     const wa = window.Telegram && window.Telegram.WebApp;
-    if (!wa) return;
-
+    // telegram.html всегда с темой миниаппа; в браузере SDK иногда не успевает при жёстком F5
     document.documentElement.classList.add('tg-webapp');
+
+    if (!wa) return;
 
     try {
       wa.ready();
@@ -101,6 +102,21 @@ document.addEventListener('DOMContentLoaded', () => {
     stage: 'groups',
     simulated: false,
     data: null,
+  };
+
+  const hardState = {
+    stage: 'groups',
+    groupMatchesByGroup: {},
+    knockoutResults: {},
+    lastQualKey: null,
+    focusAfterRender: null,
+  };
+
+  const shareState = {
+    available: false,
+    modeLabel: '',
+    championName: '',
+    finalScore: '',
   };
 
   /** % внутри playarea (= рамка разметки); 0/100 ≈ на боковой линии, чуть за край — наезд на линию */
@@ -573,6 +589,382 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  const TG_STAGE_TABS = [
+    { id: 'groups', label: 'Группы' },
+    { id: 'ko1', label: 'Левая сетка' },
+    { id: 'ko2', label: 'Правая сетка' },
+    { id: 'finals', label: 'Финал' },
+  ];
+
+  function renderStageTabs(currentStage, onSelect) {
+    const tabs = document.createElement('div');
+    tabs.className = 'tg-stage-tabs';
+    tabs.setAttribute('role', 'tablist');
+
+    TG_STAGE_TABS.forEach((st) => {
+      const tab = document.createElement('button');
+      tab.type = 'button';
+      tab.className =
+        'tg-stage-tab' + (currentStage === st.id ? ' tg-stage-tab--active' : '');
+      tab.textContent = st.label;
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-selected', currentStage === st.id ? 'true' : 'false');
+      tab.addEventListener('click', () => onSelect(st.id));
+      tabs.appendChild(tab);
+    });
+
+    return tabs;
+  }
+
+  function formatGoalDiff(gd) {
+    if (gd > 0) return `+${gd}`;
+    return String(gd);
+  }
+
+  function setShareState(payload) {
+    if (!payload || !payload.available) {
+      shareState.available = false;
+      shareState.modeLabel = '';
+      shareState.championName = '';
+      shareState.finalScore = '';
+      return;
+    }
+    shareState.available = true;
+    shareState.modeLabel = payload.modeLabel || '';
+    shareState.championName = payload.championName || '';
+    shareState.finalScore = payload.finalScore || '';
+  }
+
+  function getShareCaption() {
+    const champ = shareState.championName || '—';
+    const scorePart = shareState.finalScore ? `\nФинал: ${shareState.finalScore}` : '';
+    return `Мой результат в симуляторе ЧМ-2026 (${shareState.modeLabel}):\nЧемпион — ${champ}${scorePart}\n\nСобери свой турнир в МЯЧ Играх.`;
+  }
+
+  function createSharePosterDataUrl() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1080;
+    canvas.height = 1350;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return '';
+
+    const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    grad.addColorStop(0, '#2a16d9');
+    grad.addColorStop(1, '#0a1f80');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '700 62px system-ui, Segoe UI, Arial';
+    ctx.fillText('СИМУЛЯТОР ЧМ-2026', 70, 130);
+
+    ctx.fillStyle = '#9ad7ff';
+    ctx.font = '600 36px system-ui, Segoe UI, Arial';
+    ctx.fillText(shareState.modeLabel || 'Режим', 70, 190);
+
+    ctx.fillStyle = '#ffd34d';
+    ctx.font = '700 40px system-ui, Segoe UI, Arial';
+    ctx.fillText('ЧЕМПИОН МИРА', 70, 310);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '800 84px system-ui, Segoe UI, Arial';
+    ctx.fillText((shareState.championName || '—').toUpperCase(), 70, 400);
+
+    ctx.fillStyle = '#dbe9ff';
+    ctx.font = '600 42px system-ui, Segoe UI, Arial';
+    const finalText = shareState.finalScore ? `Финал: ${shareState.finalScore}` : 'Турнир завершён';
+    ctx.fillText(finalText, 70, 485);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.fillRect(70, 560, 940, 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '600 34px system-ui, Segoe UI, Arial';
+    ctx.fillText('Собери свой турнир в МЯЧ Играх', 70, 630);
+    ctx.font = '500 28px system-ui, Segoe UI, Arial';
+    ctx.fillStyle = '#c7d8ff';
+    ctx.fillText('@myach_games_bot', 70, 680);
+
+    return canvas.toDataURL('image/png');
+  }
+
+  function downloadSharePoster() {
+    const dataUrl = createSharePosterDataUrl();
+    if (!dataUrl) return;
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = 'wc26-result.png';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  function openShareLink(kind) {
+    const text = encodeURIComponent(getShareCaption());
+    const url = encodeURIComponent(window.location.origin + window.location.pathname);
+    const shareUrl = `https://t.me/share/url?url=${url}&text=${text}`;
+    const wa = window.Telegram && window.Telegram.WebApp;
+    if (wa && typeof wa.openTelegramLink === 'function') {
+      wa.openTelegramLink(shareUrl);
+      return;
+    }
+    window.open(shareUrl, '_blank');
+  }
+
+  function closeShareSheet() {
+    const el = document.querySelector('.tg-share-sheet');
+    if (!el) return;
+    el.remove();
+  }
+
+  function openShareSheet() {
+    closeShareSheet();
+    const sheet = document.createElement('div');
+    sheet.className = 'tg-share-sheet';
+    sheet.innerHTML = `
+      <div class="tg-share-backdrop" data-close="1"></div>
+      <div class="tg-share-panel">
+        <div class="tg-share-title">Выберите способ</div>
+        <div class="tg-share-grid">
+          <button type="button" class="tg-share-btn" data-share-kind="chat">Отправить в чат</button>
+          <button type="button" class="tg-share-btn" data-share-kind="friend">Отправить другу</button>
+          <button type="button" class="tg-share-btn" data-share-kind="save">Сохранить на устройство</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(sheet);
+    sheet.querySelector('[data-close="1"]').addEventListener('click', closeShareSheet);
+    sheet.querySelectorAll('.tg-share-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const kind = btn.dataset.shareKind;
+        if (kind === 'save') downloadSharePoster();
+        else openShareLink(kind);
+      });
+    });
+  }
+
+  function maybeAppendShareButton(stageNav) {
+    if (!shareState.available) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'tg-back-button tg-share-open-button';
+    btn.textContent = 'Поделиться';
+    btn.addEventListener('click', openShareSheet);
+    stageNav.appendChild(btn);
+  }
+
+  function createGroupMatchesForGroup(group) {
+    const teamIds = group.teams.map((t) => t.id);
+    const pairs = [
+      [0, 1],
+      [2, 3],
+      [0, 2],
+      [1, 3],
+      [0, 3],
+      [1, 2],
+    ];
+    return pairs.map(([i, j], idx) => ({
+      id: `${group.id}-${idx + 1}`,
+      groupId: group.id,
+      homeTeamId: teamIds[i],
+      awayTeamId: teamIds[j],
+      homeGoals: null,
+      awayGoals: null,
+    }));
+  }
+
+  function ensureHardState() {
+    if (typeof WORLD_CUP_2026_CONFIG === 'undefined') return;
+    for (const group of WORLD_CUP_2026_CONFIG.groups) {
+      if (!Array.isArray(hardState.groupMatchesByGroup[group.id])) {
+        hardState.groupMatchesByGroup[group.id] = createGroupMatchesForGroup(group);
+      }
+    }
+    if (!hardState.knockoutResults) hardState.knockoutResults = {};
+  }
+
+  function calcHardStandingsForGroup(group, matches) {
+    const stats = {};
+    for (const t of group.teams) {
+      stats[t.id] = {
+        teamId: t.id,
+        groupId: group.id,
+        played: 0,
+        wins: 0,
+        draws: 0,
+        losses: 0,
+        goalsFor: 0,
+        goalsAgainst: 0,
+        points: 0,
+      };
+    }
+
+    (matches || []).forEach((m) => {
+      if (m.homeGoals == null || m.awayGoals == null) return;
+      const home = stats[m.homeTeamId];
+      const away = stats[m.awayTeamId];
+      if (!home || !away) return;
+
+      home.played += 1;
+      away.played += 1;
+      home.goalsFor += m.homeGoals;
+      home.goalsAgainst += m.awayGoals;
+      away.goalsFor += m.awayGoals;
+      away.goalsAgainst += m.homeGoals;
+
+      if (m.homeGoals > m.awayGoals) {
+        home.wins += 1;
+        away.losses += 1;
+        home.points += 3;
+      } else if (m.homeGoals < m.awayGoals) {
+        away.wins += 1;
+        home.losses += 1;
+        away.points += 3;
+      } else {
+        home.draws += 1;
+        away.draws += 1;
+        home.points += 1;
+        away.points += 1;
+      }
+    });
+
+    return Object.values(stats).sort((a, b) => {
+      if (b.points !== a.points) return b.points - a.points;
+      const gdA = a.goalsFor - a.goalsAgainst;
+      const gdB = b.goalsFor - b.goalsAgainst;
+      if (gdB !== gdA) return gdB - gdA;
+      if (b.goalsFor !== a.goalsFor) return b.goalsFor - a.goalsFor;
+      const nameA = findTeamById(a.teamId)?.name || a.teamId;
+      const nameB = findTeamById(b.teamId)?.name || b.teamId;
+      return nameA.localeCompare(nameB, 'ru');
+    });
+  }
+
+  function pickBestThirdsHard(standingsByGroup) {
+    const thirds = [];
+    for (const group of WORLD_CUP_2026_CONFIG.groups) {
+      const st = standingsByGroup[group.id] || [];
+      if (st[2]) thirds.push({ ...st[2], position: 3 });
+    }
+    thirds.sort((a, b) => {
+      if (b.points !== a.points) return b.points - a.points;
+      const gdA = a.goalsFor - a.goalsAgainst;
+      const gdB = b.goalsFor - b.goalsAgainst;
+      if (gdB !== gdA) return gdB - gdA;
+      if (b.goalsFor !== a.goalsFor) return b.goalsFor - a.goalsFor;
+      const nameA = findTeamById(a.teamId)?.name || a.teamId;
+      const nameB = findTeamById(b.teamId)?.name || b.teamId;
+      return nameA.localeCompare(nameB, 'ru');
+    });
+    return thirds.slice(0, 8).map((x) => ({
+      groupId: x.groupId,
+      teamId: x.teamId,
+      points: x.points,
+      goalsFor: x.goalsFor,
+      goalsAgainst: x.goalsAgainst,
+    }));
+  }
+
+  function parseScoreValue(raw) {
+    if (raw === '' || raw == null) return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return null;
+    const i = Math.max(0, Math.min(99, Math.trunc(n)));
+    return i;
+  }
+
+  function deriveHardKnockoutWinners(rounds, knockoutResults) {
+    const winners = {};
+    const order = ['R32', 'R16', 'QF', 'SF', 'FINAL', 'THIRD'];
+    for (const roundId of order) {
+      const list = rounds[roundId] || [];
+      for (const match of list) {
+        const teams = getMatchTeamsNormal(match, rounds, winners);
+        if (!teams.homeId || !teams.awayId) continue;
+        const res = knockoutResults[match.id];
+        if (!res) continue;
+
+        const homeGoals = Number.isInteger(res.homeGoals) ? res.homeGoals : null;
+        const awayGoals = Number.isInteger(res.awayGoals) ? res.awayGoals : null;
+        if (homeGoals == null || awayGoals == null) continue;
+
+        if (homeGoals > awayGoals) {
+          winners[match.id] = teams.homeId;
+          continue;
+        }
+        if (awayGoals > homeGoals) {
+          winners[match.id] = teams.awayId;
+          continue;
+        }
+
+        const penHome = Number.isInteger(res.penHome) ? res.penHome : null;
+        const penAway = Number.isInteger(res.penAway) ? res.penAway : null;
+        if (penHome == null || penAway == null || penHome === penAway) continue;
+        winners[match.id] = penHome > penAway ? teams.homeId : teams.awayId;
+      }
+    }
+    return winners;
+  }
+
+  function isKoViewCompleteHard(rounds, viewId, winners) {
+    const defs = getMatchesByView(rounds, viewId);
+    for (const def of defs) {
+      for (const match of def.matches || []) {
+        if (!isMatchResolved(match, rounds, winners)) return false;
+      }
+    }
+    return defs.length > 0;
+  }
+
+  function areHardGroupsComplete() {
+    for (const group of WORLD_CUP_2026_CONFIG.groups) {
+      const matches = hardState.groupMatchesByGroup[group.id] || [];
+      for (const m of matches) {
+        if (m.homeGoals == null || m.awayGoals == null) return false;
+      }
+    }
+    return true;
+  }
+
+  function getNextInputFocusMeta(currentInput, selector) {
+    if (!currentInput) return null;
+    const list = Array.from(document.querySelectorAll(selector));
+    const idx = list.indexOf(currentInput);
+    if (idx === -1) return null;
+    const next = list[idx + 1];
+    if (!next) return null;
+    return {
+      selector,
+      matchId: next.dataset.matchId || '',
+      side: next.dataset.side || '',
+    };
+  }
+
+  function restoreHardInputFocus() {
+    if (!hardState.focusAfterRender) return;
+    const { selector, matchId, side } = hardState.focusAfterRender;
+    hardState.focusAfterRender = null;
+    if (!selector || !matchId || !side) return;
+    const el = document.querySelector(
+      `${selector}[data-match-id="${matchId}"][data-side="${side}"]`
+    );
+    if (!el || el.disabled) return;
+    el.focus();
+    try {
+      el.setSelectionRange(el.value.length, el.value.length);
+    } catch (e) {
+      /* ignore non-text input edge */
+    }
+  }
+
+  function renderKoSectionTitle(stage) {
+    const koTitle = document.createElement('h2');
+    koTitle.className = 'tg-title tg-title--section';
+    if (stage === 'ko1') koTitle.textContent = 'Левая сетка';
+    else if (stage === 'ko2') koTitle.textContent = 'Правая сетка';
+    else koTitle.textContent = 'Финал и 3-е место';
+    return koTitle;
+  }
+
   // --- Плей‑офф для нормального режима ---
 
   const ROUND_OF_32_TEMPLATE_TG = [
@@ -878,43 +1270,69 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function renderKoMatchCard(match, rounds, viewId, opts) {
     const locked = !!(opts && opts.locked);
-        const teams = getMatchTeamsNormal(match, rounds, normalState.knockoutWinners);
-        const homeTeam = teams.homeId ? findTeamById(teams.homeId) : null;
-        const awayTeam = teams.awayId ? findTeamById(teams.awayId) : null;
+    const teams = getMatchTeamsNormal(match, rounds, normalState.knockoutWinners);
+    const homeTeam = teams.homeId ? findTeamById(teams.homeId) : null;
+    const awayTeam = teams.awayId ? findTeamById(teams.awayId) : null;
 
-        const card = document.createElement('div');
-        card.className = 'tg-ko-match';
+    const card = document.createElement('div');
+    card.className = 'tg-ko-match';
 
-        function makeRow(team) {
-          const btn = document.createElement('button');
-          btn.className = 'tg-ko-team';
-          if (!team) {
-            btn.disabled = true;
-            btn.textContent = '—';
-            return btn;
-          }
-          const isWinner = normalState.knockoutWinners[match.id] === team.id;
-          if (isWinner) btn.classList.add('tg-ko-team-winner');
-          btn.innerHTML = `
-            <span class="flag-wrap">${renderFlagHtmlSimple(team)}</span>
-            <span class="team-name">${team.name}</span>
-            <span class="tg-ko-pick">✓</span>
-          `;
-          btn.addEventListener('click', (e) => {
+    function makeRow(team) {
+      const row = document.createElement('div');
+      row.className = 'tg-ko-team-row';
+
+      if (team) {
+        const squadBtn = document.createElement('button');
+        squadBtn.type = 'button';
+        squadBtn.className = 'team-squad-btn team-squad-btn--ko';
+        squadBtn.dataset.teamId = team.id;
+        squadBtn.setAttribute('aria-label', 'Состав сборной');
+        squadBtn.title = 'Состав';
+        squadBtn.textContent = '👕';
+        squadBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+        });
+        row.appendChild(squadBtn);
+      } else {
+        const spacer = document.createElement('span');
+        spacer.className = 'team-squad-btn team-squad-btn--ko team-squad-btn--spacer';
+        spacer.setAttribute('aria-hidden', 'true');
+        row.appendChild(spacer);
+      }
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'tg-ko-team';
+      if (!team) {
+        btn.disabled = true;
+        btn.textContent = '—';
+        row.appendChild(btn);
+        return row;
+      }
+
+      const isWinner = normalState.knockoutWinners[match.id] === team.id;
+      if (isWinner) btn.classList.add('tg-ko-team-winner');
+      btn.innerHTML = `
+        <span class="flag-wrap">${renderFlagHtmlSimple(team)}</span>
+        <span class="team-name">${team.name}</span>
+        <span class="tg-ko-pick">✓</span>
+      `;
+      btn.addEventListener('click', (e) => {
         if (locked) return;
-            if (!e.target.closest('.tg-ko-pick')) return;
-            const gridEl = document.querySelector('.tg-ko-grid');
-            const scrollLeft = gridEl ? gridEl.scrollLeft : 0;
-            normalState.knockoutWinners[match.id] = team.id;
-            renderNormalMode();
-            const newGrid = document.querySelector('.tg-ko-grid');
-            if (newGrid) newGrid.scrollLeft = scrollLeft;
-          });
-          return btn;
-        }
+        const gridEl = document.querySelector('.tg-ko-grid');
+        const scrollLeft = gridEl ? gridEl.scrollLeft : 0;
+        normalState.knockoutWinners[match.id] = team.id;
+        renderNormalMode();
+        const newGrid = document.querySelector('.tg-ko-grid');
+        if (newGrid) newGrid.scrollLeft = scrollLeft;
+      });
+      row.appendChild(btn);
+      return row;
+    }
 
-        card.appendChild(makeRow(homeTeam));
-        card.appendChild(makeRow(awayTeam));
+    card.appendChild(makeRow(homeTeam));
+    card.appendChild(makeRow(awayTeam));
 
     return card;
   }
@@ -1049,15 +1467,7 @@ document.addEventListener('DOMContentLoaded', () => {
     root.innerHTML = '';
 
     const container = document.createElement('div');
-    container.className = 'tg-screen tg-level-screen';
-
-    const title = document.createElement('h1');
-    title.className = 'tg-title';
-    title.textContent = 'Нормальный режим';
-
-    const subtitle = document.createElement('p');
-    subtitle.className = 'tg-subtitle';
-    subtitle.textContent = 'Режим этапов: группы → плей‑офф (2 части) → финал.';
+    container.className = 'tg-screen tg-level-screen tg-level-screen--compact';
 
     const groupsGrid = document.createElement('div');
     groupsGrid.className = 'groups-grid';
@@ -1072,7 +1482,7 @@ document.addEventListener('DOMContentLoaded', () => {
       header.innerHTML = `
         <div>
           <div class="group-title">${group.name}</div>
-          <div class="group-subtitle">Тап — смена мест (1–4)</div>
+          <div class="group-subtitle">Тап — сменить место</div>
         </div>
       `;
       card.appendChild(header);
@@ -1169,10 +1579,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const qualifiers = calcQualifiersNormalFromState();
     const bracket = buildBracketNormal(qualifiers);
+    const normalFinalMatch = (bracket.FINAL && bracket.FINAL[0]) || null;
+    const normalComplete = !!(
+      normalFinalMatch &&
+      isMatchResolved(normalFinalMatch, bracket, normalState.knockoutWinners)
+    );
+    const normalChampionId = normalComplete
+      ? normalState.knockoutWinners[normalFinalMatch.id]
+      : null;
+    const normalChampion = normalChampionId ? findTeamById(normalChampionId) : null;
+    setShareState({
+      available: normalComplete,
+      modeLabel: 'Нормальный',
+      championName: normalChampion ? normalChampion.name : '',
+      finalScore: '',
+    });
 
     if (normalState.stage !== 'groups' && selected.length !== 8) {
       normalState.stage = 'groups';
     }
+
+    const playoffsReady = selected.length === 8;
 
     const stageNav = document.createElement('div');
     stageNav.className = 'tg-stage-nav';
@@ -1192,7 +1619,7 @@ document.addEventListener('DOMContentLoaded', () => {
         leftBtn.textContent = '← Назад к выбору уровня';
         leftBtn.addEventListener('click', renderStartScreen);
       }
-      if (selected.length === 8) {
+      if (playoffsReady) {
         rightBtn.textContent = 'Перейти к плей‑офф →';
         rightBtn.addEventListener('click', () => {
           normalState.stage = 'ko1';
@@ -1207,7 +1634,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderNormalMode();
       });
       if (isKoViewComplete(bracket, 'ko1')) {
-        rightBtn.textContent = 'Вторая половина сетки →';
+        rightBtn.textContent = 'Правая сетка →';
         rightBtn.addEventListener('click', () => {
           normalState.stage = 'ko2';
           renderNormalMode();
@@ -1215,7 +1642,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showRight = true;
       }
     } else if (normalState.stage === 'ko2') {
-      leftBtn.textContent = '← Первая половина';
+      leftBtn.textContent = '← Левая сетка';
       leftBtn.addEventListener('click', () => {
         normalState.stage = 'ko1';
         renderNormalMode();
@@ -1236,7 +1663,7 @@ document.addEventListener('DOMContentLoaded', () => {
         leftBtn.textContent = launchContext.fromHub ? '← К списку игр' : '← В главное меню';
         leftBtn.addEventListener('click', exitAppOrMenu);
       } else {
-        leftBtn.textContent = '← Ко второй половине';
+        leftBtn.textContent = '← Правая сетка';
         leftBtn.addEventListener('click', () => {
           normalState.stage = 'ko2';
           renderNormalMode();
@@ -1246,54 +1673,62 @@ document.addEventListener('DOMContentLoaded', () => {
 
     stageNav.appendChild(leftBtn);
     if (showRight) stageNav.appendChild(rightBtn);
+    maybeAppendShareButton(stageNav);
+    const data = easyState.data;
+    const easyFinalMatch = data && data.rounds && data.rounds.FINAL ? data.rounds.FINAL[0] : null;
+    const easyComplete = !!(
+      easyFinalMatch &&
+      data &&
+      data.knockoutWinners &&
+      data.knockoutWinners[easyFinalMatch.id]
+    );
+    const easyChampionId = easyComplete ? data.knockoutWinners[easyFinalMatch.id] : null;
+    const easyChampion = easyChampionId ? findTeamById(easyChampionId) : null;
+    const easyFinalRes =
+      easyFinalMatch && data && data.knockoutResults
+        ? data.knockoutResults[easyFinalMatch.id]
+        : null;
+    const easyFinalScore =
+      easyFinalRes &&
+      Number.isInteger(easyFinalRes.homeGoals) &&
+      Number.isInteger(easyFinalRes.awayGoals)
+        ? `${easyFinalRes.homeGoals}:${easyFinalRes.awayGoals}`
+        : '';
+    setShareState({
+      available: easyComplete,
+      modeLabel: 'Лёгкий',
+      championName: easyChampion ? easyChampion.name : '',
+      finalScore: easyFinalScore,
+    });
+    maybeAppendShareButton(stageNav);
     container.appendChild(stageNav);
-    container.appendChild(title);
-    container.appendChild(subtitle);
-
-    const squadHint = document.createElement('p');
-    squadHint.className = 'tg-hint tg-squad-hint';
-    squadHint.textContent =
-      'Состав на поле (карточки). Открыть: 👕 или двойной тап по названию.';
 
     if (normalState.stage === 'groups') {
-    container.appendChild(groupsGrid);
-      container.appendChild(squadHint);
-    container.appendChild(thirdsPanel);
-    } else if (selected.length === 8) {
+      container.appendChild(groupsGrid);
+      container.appendChild(thirdsPanel);
+    } else if (playoffsReady) {
       const koWrapper = document.createElement('div');
       koWrapper.className = 'tg-ko-wrapper';
 
-      const koTitle = document.createElement('h2');
-      koTitle.className = 'tg-title';
-      if (normalState.stage === 'ko1') {
-        koTitle.textContent = 'Плей‑офф · часть 1';
-      } else if (normalState.stage === 'ko2') {
-        koTitle.textContent = 'Плей‑офф · часть 2';
-      } else {
-        koTitle.textContent = 'Финал и 3-е место';
-      }
-      koWrapper.appendChild(koTitle);
-
-      const koGrid = renderKnockoutNormal(
-        bracket,
-        normalState.stage === 'ko1'
-          ? 'ko1'
-          : normalState.stage === 'ko2'
-            ? 'ko2'
-            : 'finals'
+      koWrapper.appendChild(
+        renderKnockoutNormal(
+          bracket,
+          normalState.stage === 'ko1'
+            ? 'ko1'
+            : normalState.stage === 'ko2'
+              ? 'ko2'
+              : 'finals'
+        )
       );
-      koWrapper.appendChild(koGrid);
-
       container.appendChild(koWrapper);
     }
 
     root.appendChild(container);
 
-    // Перестановка команд тапами (удобно на телефоне, работает и с мышью)
+    bindSquadOpenTriggers(container);
+
     let selectedTeamId = null;
     let selectedGroupId = null;
-
-    bindSquadOpenTriggers(groupsGrid);
 
     groupsGrid.querySelectorAll('.team-card').forEach((row) => {
       row.addEventListener('click', () => {
@@ -1366,13 +1801,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- Лёгкий режим (автосимуляция) ---
 
-  const EASY_STAGES = [
-    { id: 'groups', label: 'Группы' },
-    { id: 'ko1', label: 'Плей‑офф 1' },
-    { id: 'ko2', label: 'Плей‑офф 2' },
-    { id: 'finals', label: 'Финал' },
-  ];
-
   function runEasySimulation() {
     if (typeof SimEngine === 'undefined') {
       alert('Движок симуляции не загружен.');
@@ -1384,50 +1812,38 @@ document.addEventListener('DOMContentLoaded', () => {
     renderEasyMode();
   }
 
-  function formatGoalDiff(gd) {
-    if (gd > 0) return `+${gd}`;
-    return String(gd);
-  }
-
-  function renderEasyGroupStatsRow(stats) {
-    if (!stats) {
-      return '<span class="team-group-stats team-group-stats--empty">— — — —</span>';
-    }
-    const gd = stats.goalsFor - stats.goalsAgainst;
-    return `
-      <span class="team-group-stats" title="Очки · забито · пропущено · разница">
-        <span class="team-stat">${stats.points}</span>
-        <span class="team-stat">${stats.goalsFor}</span>
-        <span class="team-stat">${stats.goalsAgainst}</span>
-        <span class="team-stat">${formatGoalDiff(gd)}</span>
-      </span>
-    `;
-  }
-
   function renderEasyGroupsGrid(simulated, standingsByGroup) {
     const grid = document.createElement('div');
     grid.className = 'groups-grid';
 
     for (const group of WORLD_CUP_2026_CONFIG.groups) {
       const card = document.createElement('div');
-      card.className = 'group-card';
+      card.className = 'group-card' + (simulated ? ' group-card--stats' : '');
 
       const header = document.createElement('div');
       header.className = 'group-header';
       header.innerHTML = `
         <div>
           <div class="group-title">${group.name}</div>
-          <div class="group-subtitle">${
-            simulated
-              ? 'О · ЗМ · ПМ · Р'
-              : 'Нажми «Симулировать» — появятся очки и голы'
-          }</div>
         </div>
       `;
       card.appendChild(header);
 
-      const list = document.createElement('div');
-      list.className = 'group-teams-list';
+      const table = document.createElement('div');
+      table.className = 'group-table';
+
+      const head = document.createElement('div');
+      head.className = 'group-table-head';
+      head.innerHTML = `
+        <span class="col-pos"></span>
+        <span class="col-team"></span>
+        <span class="col-stat">О</span>
+        <span class="col-stat">ЗМ</span>
+        <span class="col-stat">ПМ</span>
+        <span class="col-stat">Р</span>
+        <span class="col-squad"></span>
+      `;
+      table.appendChild(head);
 
       const standings = simulated ? standingsByGroup[group.id] || [] : [];
       const rows = simulated
@@ -1439,8 +1855,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!team) return;
 
         const line = document.createElement('div');
-        line.className = 'team-card team-card--easy';
+        line.className = 'group-table-row team-card team-card--easy';
         line.dataset.teamId = team.id;
+
+        const gd = simulated ? row.goalsFor - row.goalsAgainst : null;
 
         line.innerHTML = `
           <span class="team-position">${index + 1}</span>
@@ -1448,13 +1866,16 @@ document.addEventListener('DOMContentLoaded', () => {
             ${renderFlagHtmlSimple(team)}
             <span class="team-name">${team.name}</span>
           </div>
-          ${renderEasyGroupStatsRow(simulated ? row : null)}
+          <span class="team-stat">${simulated ? row.points : '—'}</span>
+          <span class="team-stat">${simulated ? row.goalsFor : '—'}</span>
+          <span class="team-stat">${simulated ? row.goalsAgainst : '—'}</span>
+          <span class="team-stat">${simulated ? formatGoalDiff(gd) : '—'}</span>
           <button type="button" class="team-squad-btn" data-team-id="${team.id}" aria-label="Состав сборной" title="Состав">👕</button>
         `;
-        list.appendChild(line);
+        table.appendChild(line);
       });
 
-      card.appendChild(list);
+      card.appendChild(table);
       grid.appendChild(card);
     }
 
@@ -1468,35 +1889,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const header = document.createElement('div');
     header.className = 'thirds-header';
-    header.innerHTML = `
-      <span class="thirds-title">8 лучших третьих мест</span>
-      <span class="badge">${bestThirds.length} из 8</span>
-    `;
+    header.innerHTML = `<span class="thirds-title">Прошли из 3‑го места</span>`;
     panel.appendChild(header);
 
     const list = document.createElement('div');
-    list.className = 'thirds-list';
+    list.className = 'thirds-qualified-list';
 
-    const selectedSet = new Set(bestThirds.map((x) => `${x.groupId}:${x.teamId}`));
+    bestThirds.forEach((entry, idx) => {
+      const team = findTeamById(entry.teamId);
+      if (!team) return;
 
-    for (const group of WORLD_CUP_2026_CONFIG.groups) {
-      const st = easyState.data.standingsByGroup[group.id] || [];
-      const third = st[2];
-      if (!third) continue;
-      const team = findTeamById(third.teamId);
-      if (!team) continue;
-      const isSelected = selectedSet.has(`${group.id}:${third.teamId}`);
-
-      const pill = document.createElement('div');
-      pill.className = 'third-pill' + (isSelected ? ' third-pill-selected' : ' third-pill-muted');
-      pill.innerHTML = `
-        <span class="badge">${group.id}-3</span>
+      const row = document.createElement('div');
+      row.className = 'thirds-qualified-row';
+      row.innerHTML = `
+        <span class="thirds-qualified-num">${idx + 1}</span>
+        <span class="badge">${entry.groupId}-3</span>
         ${renderFlagHtmlSimple(team)}
         <span class="team-name">${team.name}</span>
-        ${isSelected ? '' : '<span class="third-pill-out">не прошла</span>'}
       `;
-      list.appendChild(pill);
-    }
+      list.appendChild(row);
+    });
 
     panel.appendChild(list);
     return panel;
@@ -1515,6 +1927,23 @@ document.addEventListener('DOMContentLoaded', () => {
     function makeRow(team, score) {
       const row = document.createElement('div');
       row.className = 'tg-ko-team-row';
+
+      if (team) {
+        const squadBtn = document.createElement('button');
+        squadBtn.type = 'button';
+        squadBtn.className = 'team-squad-btn team-squad-btn--ko';
+        squadBtn.dataset.teamId = team.id;
+        squadBtn.setAttribute('aria-label', 'Состав сборной');
+        squadBtn.title = 'Состав';
+        squadBtn.textContent = '👕';
+        row.appendChild(squadBtn);
+      } else {
+        const spacer = document.createElement('span');
+        spacer.className =
+          'team-squad-btn team-squad-btn--ko team-squad-btn--spacer';
+        spacer.setAttribute('aria-hidden', 'true');
+        row.appendChild(spacer);
+      }
 
       const inner = document.createElement('div');
       inner.className = 'tg-ko-team tg-ko-team--readonly';
@@ -1661,11 +2090,490 @@ document.addEventListener('DOMContentLoaded', () => {
     return wrapper;
   }
 
+  function renderHardGroupsStage(standingsByGroup, groupMatchesByGroup) {
+    const grid = document.createElement('div');
+    grid.className = 'groups-grid';
+
+    for (const group of WORLD_CUP_2026_CONFIG.groups) {
+      const card = document.createElement('div');
+      card.className = 'group-card group-card--stats';
+
+      const header = document.createElement('div');
+      header.className = 'group-header';
+      header.innerHTML = `
+        <div>
+          <div class="group-title">${group.name}</div>
+        </div>
+      `;
+      card.appendChild(header);
+
+      const table = document.createElement('div');
+      table.className = 'group-table';
+      table.innerHTML = `
+        <div class="group-table-head">
+          <span class="col-pos"></span>
+          <span class="col-team"></span>
+          <span class="col-stat">О</span>
+          <span class="col-stat">ЗМ</span>
+          <span class="col-stat">ПМ</span>
+          <span class="col-stat">Р</span>
+          <span class="col-squad"></span>
+        </div>
+      `;
+      const standings = standingsByGroup[group.id] || [];
+      standings.forEach((row, index) => {
+        const team = findTeamById(row.teamId);
+        if (!team) return;
+        const gd = row.goalsFor - row.goalsAgainst;
+        const line = document.createElement('div');
+        line.className = 'group-table-row team-card team-card--easy';
+        line.dataset.teamId = team.id;
+        line.innerHTML = `
+          <span class="team-position">${index + 1}</span>
+          <div class="standings-team" title="Двойной тап — состав">
+            ${renderFlagHtmlSimple(team)}
+            <span class="team-name">${team.name}</span>
+          </div>
+          <span class="team-stat">${row.points}</span>
+          <span class="team-stat">${row.goalsFor}</span>
+          <span class="team-stat">${row.goalsAgainst}</span>
+          <span class="team-stat">${formatGoalDiff(gd)}</span>
+          <button type="button" class="team-squad-btn" data-team-id="${team.id}" aria-label="Состав сборной" title="Состав">👕</button>
+        `;
+        table.appendChild(line);
+      });
+      card.appendChild(table);
+
+      const matchesWrap = document.createElement('div');
+      matchesWrap.className = 'tg-hard-group-matches';
+      const matches = groupMatchesByGroup[group.id] || [];
+      const labels = ['Тур 1', 'Тур 2', 'Тур 3'];
+      for (let md = 0; md < 3; md += 1) {
+        const sec = document.createElement('div');
+        sec.className = 'tg-hard-matchday';
+        sec.innerHTML = `<div class="tg-hard-matchday-title">${labels[md]}</div>`;
+        const start = md * 2;
+        const list = matches.slice(start, start + 2);
+        list.forEach((m) => {
+          const home = findTeamById(m.homeTeamId);
+          const away = findTeamById(m.awayTeamId);
+          if (!home || !away) return;
+          const row = document.createElement('div');
+          row.className = 'tg-hard-match-row';
+          row.innerHTML = `
+            <div class="tg-hard-team tg-hard-team--home">${renderFlagHtmlSimple(home)}<span class="team-name">${home.name}</span></div>
+            <input class="tg-hard-score-input" type="number" min="0" max="99" inputmode="numeric" value="${m.homeGoals == null ? '' : m.homeGoals}" data-group-id="${group.id}" data-match-id="${m.id}" data-side="home" />
+            <span class="tg-hard-dash">-</span>
+            <input class="tg-hard-score-input" type="number" min="0" max="99" inputmode="numeric" value="${m.awayGoals == null ? '' : m.awayGoals}" data-group-id="${group.id}" data-match-id="${m.id}" data-side="away" />
+            <div class="tg-hard-team tg-hard-team--away"><span class="team-name">${away.name}</span>${renderFlagHtmlSimple(away)}</div>
+          `;
+          sec.appendChild(row);
+        });
+        matchesWrap.appendChild(sec);
+      }
+      card.appendChild(matchesWrap);
+      grid.appendChild(card);
+    }
+
+    return grid;
+  }
+
+  function renderKoMatchCardHard(match, rounds, winners, results) {
+    const teams = getMatchTeamsNormal(match, rounds, winners);
+    const homeTeam = teams.homeId ? findTeamById(teams.homeId) : null;
+    const awayTeam = teams.awayId ? findTeamById(teams.awayId) : null;
+    const res = results[match.id] || {};
+    const card = document.createElement('div');
+    card.className = 'tg-ko-match tg-ko-match--scored tg-ko-match--editable';
+
+    function makeRow(team, side) {
+      const row = document.createElement('div');
+      row.className = 'tg-ko-team-row';
+      const squad = document.createElement(team ? 'button' : 'span');
+      squad.className = 'team-squad-btn team-squad-btn--ko' + (team ? '' : ' team-squad-btn--spacer');
+      if (team) {
+        squad.type = 'button';
+        squad.dataset.teamId = team.id;
+        squad.setAttribute('aria-label', 'Состав сборной');
+        squad.title = 'Состав';
+        squad.textContent = '👕';
+      } else {
+        squad.setAttribute('aria-hidden', 'true');
+      }
+      row.appendChild(squad);
+
+      const name = document.createElement('div');
+      name.className = 'tg-ko-team tg-ko-team--readonly';
+      name.innerHTML = team
+        ? `<span class="flag-wrap">${renderFlagHtmlSimple(team)}</span><span class="team-name">${team.name}</span>`
+        : '—';
+      row.appendChild(name);
+
+      const input = document.createElement('input');
+      input.className = 'tg-ko-score-input';
+      input.type = 'number';
+      input.min = '0';
+      input.max = '99';
+      input.inputMode = 'numeric';
+      input.dataset.matchId = match.id;
+      input.dataset.side = side === 'home' ? 'homeGoals' : 'awayGoals';
+      input.value = Number.isInteger(side === 'home' ? res.homeGoals : res.awayGoals)
+        ? String(side === 'home' ? res.homeGoals : res.awayGoals)
+        : '';
+      input.disabled = !team;
+      row.appendChild(input);
+
+      const hasMainTieNow =
+        Number.isInteger(res.homeGoals) &&
+        Number.isInteger(res.awayGoals) &&
+        res.homeGoals === res.awayGoals &&
+        !!homeTeam &&
+        !!awayTeam;
+      const penInput = document.createElement('input');
+      penInput.className =
+        'tg-ko-pen-input tg-ko-pen-input--inline' + (hasMainTieNow ? '' : ' tg-ko-pen-input--hidden');
+      penInput.type = 'number';
+      penInput.min = '0';
+      penInput.max = '99';
+      penInput.inputMode = 'numeric';
+      penInput.dataset.matchId = match.id;
+      penInput.dataset.side = side === 'home' ? 'penHome' : 'penAway';
+      penInput.value = Number.isInteger(side === 'home' ? res.penHome : res.penAway)
+        ? String(side === 'home' ? res.penHome : res.penAway)
+        : '';
+      penInput.disabled = !team || !hasMainTieNow;
+      penInput.title = 'Серия пенальти';
+      penInput.setAttribute('aria-label', 'Серия пенальти');
+      const penBadge = document.createElement('span');
+      penBadge.className = 'tg-ko-pen-badge' + (hasMainTieNow ? '' : ' tg-ko-pen-input--hidden');
+      penBadge.textContent = 'П';
+      row.appendChild(penBadge);
+      row.appendChild(penInput);
+      return row;
+    }
+
+    card.appendChild(makeRow(homeTeam, 'home'));
+    card.appendChild(makeRow(awayTeam, 'away'));
+
+    const hasMainTie =
+      Number.isInteger(res.homeGoals) &&
+      Number.isInteger(res.awayGoals) &&
+      res.homeGoals === res.awayGoals &&
+      !!homeTeam &&
+      !!awayTeam;
+    if (hasMainTie) card.classList.add('tg-ko-match--tie');
+    return card;
+  }
+
+  function renderFinalsHard(rounds, winners, results) {
+    const finalMatch = (rounds.FINAL && rounds.FINAL[0]) || null;
+    const thirdMatch = (rounds.THIRD && rounds.THIRD[0]) || null;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tg-ko-finals';
+
+    const top = document.createElement('div');
+    top.className = 'tg-ko-finals-top';
+
+    const championCard = document.createElement('div');
+    championCard.className = 'tg-ko-champion';
+    championCard.innerHTML = `
+      <div class="tg-ko-champion-label">Чемпион мира</div>
+      <div class="tg-ko-champion-team">—</div>
+    `;
+
+    let finalHomeTeam = null;
+    let finalAwayTeam = null;
+    let championTeam = null;
+    if (finalMatch) {
+      const t = getMatchTeamsNormal(finalMatch, rounds, winners);
+      finalHomeTeam = t.homeId ? findTeamById(t.homeId) : null;
+      finalAwayTeam = t.awayId ? findTeamById(t.awayId) : null;
+      const winnerId = winners[finalMatch.id];
+      if (winnerId) championTeam = findTeamById(winnerId);
+    }
+
+    function finalistHtml(team) {
+      return team
+        ? `${renderFlagHtmlSimple(team)}<span>${team.name}</span>`
+        : '<span>—</span>';
+    }
+
+    const leftFinalist = document.createElement('div');
+    leftFinalist.className = 'tg-ko-finalist tg-ko-finalist--readonly';
+    leftFinalist.innerHTML = finalHomeTeam ? finalistHtml(finalHomeTeam) : '<span>—</span>';
+
+    const rightFinalist = document.createElement('div');
+    rightFinalist.className = 'tg-ko-finalist tg-ko-finalist--readonly';
+    rightFinalist.innerHTML = finalAwayTeam ? finalistHtml(finalAwayTeam) : '<span>—</span>';
+
+    const champTeamEl = championCard.querySelector('.tg-ko-champion-team');
+    if (champTeamEl) {
+      champTeamEl.innerHTML = championTeam
+        ? `${renderFlagHtmlSimple(championTeam)}<span>${championTeam.name}</span>`
+        : '—';
+    }
+
+    top.appendChild(leftFinalist);
+    top.appendChild(championCard);
+    top.appendChild(rightFinalist);
+    wrapper.appendChild(top);
+
+    const bottom = document.createElement('div');
+    bottom.className = 'tg-ko-finals-bottom';
+
+    const finalBlock = document.createElement('div');
+    finalBlock.className = 'tg-ko-finals-match tg-ko-finals-third';
+    finalBlock.innerHTML = `<div class="tg-ko-finals-title">Финал</div>`;
+    if (finalMatch) {
+      finalBlock.appendChild(renderKoMatchCardHard(finalMatch, rounds, winners, results));
+    }
+
+    const thirdBlock = document.createElement('div');
+    thirdBlock.className = 'tg-ko-finals-match tg-ko-finals-third';
+    thirdBlock.innerHTML = `<div class="tg-ko-finals-title">3‑е место</div>`;
+    if (thirdMatch) {
+      thirdBlock.appendChild(renderKoMatchCardHard(thirdMatch, rounds, winners, results));
+    }
+
+    bottom.appendChild(finalBlock);
+    bottom.appendChild(thirdBlock);
+    wrapper.appendChild(bottom);
+    return wrapper;
+  }
+
+  function renderKnockoutHard(rounds, viewId, winners, results) {
+    if (viewId === 'finals') {
+      return renderFinalsHard(rounds, winners, results);
+    }
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tg-ko-grid tg-ko-grid--bracket tg-ko-grid--hard';
+    const roundDefs = getMatchesByView(rounds, viewId);
+    roundDefs.forEach((rdef) => {
+      const col = document.createElement('div');
+      col.className = 'tg-ko-column';
+      const head = document.createElement('div');
+      head.className = 'tg-ko-column-title';
+      head.textContent = rdef.label;
+      col.appendChild(head);
+      const list = document.createElement('div');
+      list.className = 'tg-ko-column-matches tg-ko-bracket-col';
+      list.style.setProperty('--ko-rows', '16');
+      (rdef.matches || []).forEach((match, i) => {
+        const card = renderKoMatchCardHard(match, rounds, winners, results);
+        const row = koSlotRow(rdef.id, i);
+        card.style.gridRow = `${row} / span 2`;
+        list.appendChild(card);
+      });
+      col.appendChild(list);
+      wrapper.appendChild(col);
+    });
+    return wrapper;
+  }
+
+  function renderHardMode() {
+    ensureHardState();
+    root.innerHTML = '';
+
+    const standingsByGroup = {};
+    for (const group of WORLD_CUP_2026_CONFIG.groups) {
+      standingsByGroup[group.id] = calcHardStandingsForGroup(
+        group,
+        hardState.groupMatchesByGroup[group.id] || []
+      );
+    }
+    const groupsComplete = areHardGroupsComplete();
+    const bestThirds = groupsComplete ? pickBestThirdsHard(standingsByGroup) : [];
+    const qualifiers = { standingsByGroup: {}, bestThirds };
+    for (const group of WORLD_CUP_2026_CONFIG.groups) {
+      const source = groupsComplete ? standingsByGroup[group.id] || [] : [];
+      qualifiers.standingsByGroup[group.id] = source.map((row) => ({
+        teamId: row.teamId,
+        groupId: row.groupId,
+      }));
+    }
+
+    const qualKey = JSON.stringify(qualifiers);
+    if (qualKey !== hardState.lastQualKey) {
+      hardState.lastQualKey = qualKey;
+      hardState.knockoutResults = {};
+      hardState.stage = 'groups';
+    }
+    if (!groupsComplete && hardState.stage !== 'groups') {
+      hardState.stage = 'groups';
+    }
+
+    const rounds = buildBracketNormal(qualifiers);
+    const winners = deriveHardKnockoutWinners(rounds, hardState.knockoutResults);
+    const hardFinalMatch = (rounds.FINAL && rounds.FINAL[0]) || null;
+    const hardComplete = !!(hardFinalMatch && isMatchResolved(hardFinalMatch, rounds, winners));
+    const hardChampionId = hardComplete ? winners[hardFinalMatch.id] : null;
+    const hardChampion = hardChampionId ? findTeamById(hardChampionId) : null;
+    const hardFinalResult =
+      hardFinalMatch && hardState.knockoutResults[hardFinalMatch.id]
+        ? hardState.knockoutResults[hardFinalMatch.id]
+        : null;
+    const hardFinalScore =
+      hardFinalResult &&
+      Number.isInteger(hardFinalResult.homeGoals) &&
+      Number.isInteger(hardFinalResult.awayGoals)
+        ? `${hardFinalResult.homeGoals}:${hardFinalResult.awayGoals}`
+        : '';
+    setShareState({
+      available: hardComplete,
+      modeLabel: 'Сложный',
+      championName: hardChampion ? hardChampion.name : '',
+      finalScore: hardFinalScore,
+    });
+
+    const container = document.createElement('div');
+    container.className = 'tg-screen tg-level-screen tg-level-screen--compact tg-hard-screen';
+
+    const stageNav = document.createElement('div');
+    stageNav.className = 'tg-stage-nav';
+    const leftBtn = document.createElement('button');
+    leftBtn.className = 'tg-back-button';
+    const rightBtn = document.createElement('button');
+    rightBtn.className = 'tg-back-button tg-next-button';
+    let showRight = false;
+
+    if (hardState.stage === 'groups') {
+      leftBtn.textContent = launchContext.fromHub ? '← К списку игр' : '← Назад';
+      leftBtn.addEventListener('click', launchContext.fromHub ? exitAppOrMenu : renderStartScreen);
+      if (groupsComplete) {
+        rightBtn.textContent = 'Перейти к плей‑офф →';
+        rightBtn.addEventListener('click', () => {
+          hardState.stage = 'ko1';
+          renderHardMode();
+        });
+        showRight = true;
+      }
+    } else if (hardState.stage === 'ko1') {
+      leftBtn.textContent = '← К группам';
+      leftBtn.addEventListener('click', () => {
+        hardState.stage = 'groups';
+        renderHardMode();
+      });
+      if (isKoViewCompleteHard(rounds, 'ko1', winners)) {
+        rightBtn.textContent = 'Правая сетка →';
+        rightBtn.addEventListener('click', () => {
+          hardState.stage = 'ko2';
+          renderHardMode();
+        });
+        showRight = true;
+      }
+    } else if (hardState.stage === 'ko2') {
+      leftBtn.textContent = '← Левая сетка';
+      leftBtn.addEventListener('click', () => {
+        hardState.stage = 'ko1';
+        renderHardMode();
+      });
+      if (isKoViewCompleteHard(rounds, 'ko2', winners)) {
+        rightBtn.textContent = 'К финалу →';
+        rightBtn.addEventListener('click', () => {
+          hardState.stage = 'finals';
+          renderHardMode();
+        });
+        showRight = true;
+      }
+    } else {
+      const finalMatch = (rounds.FINAL && rounds.FINAL[0]) || null;
+      const finalDone = !!(finalMatch && isMatchResolved(finalMatch, rounds, winners));
+      leftBtn.textContent = '← Правая сетка';
+      leftBtn.addEventListener('click', () => {
+        hardState.stage = 'ko2';
+        renderHardMode();
+      });
+      if (finalDone) {
+        rightBtn.textContent = launchContext.fromHub ? 'К списку игр →' : 'В главное меню →';
+        rightBtn.addEventListener('click', launchContext.fromHub ? exitAppOrMenu : renderStartScreen);
+        showRight = true;
+      }
+    }
+
+    stageNav.appendChild(leftBtn);
+    if (showRight) stageNav.appendChild(rightBtn);
+    maybeAppendShareButton(stageNav);
+    container.appendChild(stageNav);
+
+    if (hardState.stage === 'groups') {
+      container.appendChild(renderHardGroupsStage(standingsByGroup, hardState.groupMatchesByGroup));
+      if (groupsComplete) {
+        container.appendChild(renderEasyThirdsPanel(bestThirds));
+      }
+    } else {
+      const koWrapper = document.createElement('div');
+      koWrapper.className = 'tg-ko-wrapper';
+      koWrapper.appendChild(
+        renderKnockoutHard(
+          rounds,
+          hardState.stage === 'ko1' ? 'ko1' : hardState.stage === 'ko2' ? 'ko2' : 'finals',
+          winners,
+          hardState.knockoutResults
+        )
+      );
+      container.appendChild(koWrapper);
+    }
+
+    root.appendChild(container);
+    bindSquadOpenTriggers(container);
+
+    container.querySelectorAll('.tg-hard-score-input').forEach((input) => {
+      input.addEventListener('input', () => {
+        const focusMeta =
+          input.value !== ''
+            ? getNextInputFocusMeta(input, '.tg-hard-score-input')
+            : null;
+        const groupId = input.dataset.groupId;
+        const matchId = input.dataset.matchId;
+        const side = input.dataset.side;
+        const list = hardState.groupMatchesByGroup[groupId] || [];
+        const match = list.find((m) => m.id === matchId);
+        if (!match) return;
+        const val = parseScoreValue(input.value);
+        if (side === 'home') match.homeGoals = val;
+        else match.awayGoals = val;
+        hardState.focusAfterRender = focusMeta;
+        renderHardMode();
+      });
+    });
+
+    container.querySelectorAll('.tg-ko-score-input, .tg-ko-pen-input').forEach((input) => {
+      input.addEventListener('input', () => {
+        const focusMeta =
+          input.value !== ''
+            ? getNextInputFocusMeta(
+                input,
+                input.classList.contains('tg-ko-pen-input')
+                  ? '.tg-ko-pen-input'
+                  : '.tg-ko-score-input'
+              )
+            : null;
+        const matchId = input.dataset.matchId;
+        const side = input.dataset.side;
+        if (!matchId || !side) return;
+        if (!hardState.knockoutResults[matchId]) hardState.knockoutResults[matchId] = {};
+        hardState.knockoutResults[matchId][side] = parseScoreValue(input.value);
+
+        const r = hardState.knockoutResults[matchId];
+        const tieMain = Number.isInteger(r.homeGoals) && Number.isInteger(r.awayGoals) && r.homeGoals === r.awayGoals;
+        if (!tieMain) {
+          r.penHome = null;
+          r.penAway = null;
+        }
+        hardState.focusAfterRender = focusMeta;
+        renderHardMode();
+      });
+    });
+
+    restoreHardInputFocus();
+  }
+
   function renderEasyMode() {
     root.innerHTML = '';
 
     const container = document.createElement('div');
-    container.className = 'tg-screen tg-level-screen tg-easy-screen';
+    container.className =
+      'tg-screen tg-level-screen tg-level-screen--compact tg-easy-screen';
 
     const stageNav = document.createElement('div');
     stageNav.className = 'tg-stage-nav';
@@ -1692,54 +2600,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     container.appendChild(stageNav);
 
-    const title = document.createElement('h1');
-    title.className = 'tg-title';
-    title.textContent = 'Лёгкий режим';
-
-    const subtitle = document.createElement('p');
-    subtitle.className = 'tg-subtitle';
-    if (!easyState.simulated) {
-      subtitle.textContent =
-        'Автосимуляция всего турнира. Сначала нажми кнопку сверху — потом можно листать этапы.';
-    } else if (
-      easyState.data &&
-      !easyState.data.ratingsConfigured &&
-      typeof SimEngine !== 'undefined' &&
-      !SimEngine.hasConfiguredRatings()
-    ) {
-      subtitle.textContent =
-        'Демо-прогон на заглушках рейтинга. После добавления FIFA и формы результаты станут реалистичнее.';
-    } else {
-      subtitle.textContent = 'Турнир симулирован. Переключай этапы ниже.';
-    }
-
-    container.appendChild(title);
-    container.appendChild(subtitle);
-
     if (easyState.simulated) {
-      const tabs = document.createElement('div');
-      tabs.className = 'tg-easy-tabs';
-      tabs.setAttribute('role', 'tablist');
-
-      EASY_STAGES.forEach((st) => {
-        const tab = document.createElement('button');
-        tab.type = 'button';
-        tab.className =
-          'tg-easy-tab' + (easyState.stage === st.id ? ' tg-easy-tab--active' : '');
-        tab.textContent = st.label;
-        tab.setAttribute('role', 'tab');
-        tab.setAttribute('aria-selected', easyState.stage === st.id ? 'true' : 'false');
-        tab.addEventListener('click', () => {
-          easyState.stage = st.id;
+      container.appendChild(
+        renderStageTabs(easyState.stage, (id) => {
+          easyState.stage = id;
           renderEasyMode();
-        });
-        tabs.appendChild(tab);
-      });
-
-      container.appendChild(tabs);
+        })
+      );
     }
 
-    const data = easyState.data;
     const standingsByGroup = data ? data.standingsByGroup : {};
 
     if (!easyState.simulated || easyState.stage === 'groups') {
@@ -1751,14 +2620,6 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (data && data.rounds) {
       const koWrapper = document.createElement('div');
       koWrapper.className = 'tg-ko-wrapper';
-
-      const koTitle = document.createElement('h2');
-      koTitle.className = 'tg-title tg-title--section';
-      if (easyState.stage === 'ko1') koTitle.textContent = 'Плей‑офф · часть 1';
-      else if (easyState.stage === 'ko2') koTitle.textContent = 'Плей‑офф · часть 2';
-      else koTitle.textContent = 'Финал и 3-е место';
-
-      koWrapper.appendChild(koTitle);
       koWrapper.appendChild(
         renderKnockoutEasy(
           data.rounds,
@@ -1767,6 +2628,7 @@ document.addEventListener('DOMContentLoaded', () => {
           data.knockoutResults
         )
       );
+      bindSquadOpenTriggers(koWrapper);
       container.appendChild(koWrapper);
     }
 
@@ -1780,6 +2642,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (level.id === 'easy') {
       renderEasyMode();
+      return;
+    }
+    if (level.id === 'hard') {
+      renderHardMode();
       return;
     }
     root.innerHTML = '';
@@ -1808,6 +2674,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function renderStartScreen() {
+    setShareState(null);
+    closeShareSheet();
     root.innerHTML = '';
 
     const container = document.createElement('div');

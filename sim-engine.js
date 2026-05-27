@@ -3,10 +3,11 @@
  * Зависит от: data.js, team-ratings.js
  */
 const SimEngine = (function () {
-  const DEFAULT_RANK = 50;
+  const DEFAULT_POINTS = 1500;
   const DEFAULT_FORM = 'DDDDDDDDDD';
-  const HOST_BONUS = 60;
-  const HOME_ATTACK_BOOST = 1.12;
+  const HOME_ATTACK_BOOST = 1.1;
+  /** Среднее голов за матч на ЧМ (~2.5) */
+  const BASE_MATCH_GOALS = 2.45;
 
   function getRatingEntry(teamId) {
     return (typeof TEAM_RATINGS !== 'undefined' && TEAM_RATINGS[teamId]) || {};
@@ -24,22 +25,30 @@ const SimEngine = (function () {
     return maxPts ? pts / maxPts : 0.5;
   }
 
-  /** Числовая сила команды (~1300–2150). */
+  /** Сила команды: очки FIFA + бонус формы. */
   function getTeamStrength(teamId) {
     const entry = getRatingEntry(teamId);
-    const rank = entry.fifaRank != null ? entry.fifaRank : DEFAULT_RANK;
-    const base = 2150 - 9 * rank;
-    const formBonus = (formToScore(entry.form) - 0.5) * 80;
+    let base = DEFAULT_POINTS;
+
+    if (entry.fifaPoints != null) {
+      base = entry.fifaPoints;
+    } else if (entry.fifaRank != null) {
+      base = 2150 - 9 * entry.fifaRank;
+    }
+
+    const formBonus = (formToScore(entry.form) - 0.5) * 50;
     return base + formBonus;
   }
 
   function hasConfiguredRatings() {
     if (typeof TEAM_RATINGS === 'undefined') return false;
-    return Object.values(TEAM_RATINGS).some((r) => r && r.fifaRank != null);
+    return Object.values(TEAM_RATINGS).some(
+      (r) => r && (r.fifaPoints != null || r.fifaRank != null)
+    );
   }
 
   function randomPoisson(lambda) {
-    const L = Math.exp(-Math.max(0.05, lambda));
+    const L = Math.exp(-Math.max(0.04, lambda));
     let k = 0;
     let p = 1;
     do {
@@ -53,17 +62,38 @@ const SimEngine = (function () {
     return typeof HOST_TEAM_IDS !== 'undefined' && HOST_TEAM_IDS.has(teamId);
   }
 
+  /** Доля «атакующего потенциала» дома (логистика по Elo). */
+  function homeAttackShare(homeStr, awayStr) {
+    return 1 / (1 + Math.pow(10, (awayStr - homeStr) / 400));
+  }
+
+  /**
+   * Голы через Пуассон: сила → ожидаемая доля голов → λ.
+   * Большой разрыв (GER–CUW) даёт редкие крупные счета; близкие — упорные матчи.
+   */
   function simulateGoals(homeId, awayId, opts) {
     const knockout = !!(opts && opts.knockout);
     const homeStr = getTeamStrength(homeId);
     const awayStr = getTeamStrength(awayId);
-    const homeAtk = homeStr / 2000;
-    const awayAtk = awayStr / 2000;
-    const homeDef = homeStr / 2000;
-    const awayDef = awayStr / 2000;
+    const gap = homeStr - awayStr;
+    const share = homeAttackShare(homeStr, awayStr);
 
-    let lambdaHome = 1.35 * (homeAtk / awayDef);
-    let lambdaAway = 1.05 * (awayAtk / homeDef);
+    // Раньше диапазон давал слишком много низовых матчей (0:0/1:0).
+    const variance = 0.7 + Math.random() * 0.8;
+    const totalGoals = BASE_MATCH_GOALS * variance;
+
+    let lambdaHome = Math.max(0.14, totalGoals * share * 1.08);
+    let lambdaAway = Math.max(0.14, totalGoals * (1 - share));
+
+    if (gap > 120) {
+      const blowout = Math.min(1.2, (gap - 120) / 450);
+      lambdaHome *= 1 + blowout;
+      lambdaAway *= Math.max(0.15, 1 - blowout * 1.15);
+    } else if (gap < -120) {
+      const blowout = Math.min(1.2, (-gap - 120) / 450);
+      lambdaAway *= 1 + blowout;
+      lambdaHome *= Math.max(0.15, 1 - blowout * 1.15);
+    }
 
     if (isHost(homeId)) lambdaHome *= HOME_ATTACK_BOOST;
 
@@ -71,7 +101,7 @@ const SimEngine = (function () {
     let awayGoals = randomPoisson(lambdaAway);
 
     if (knockout && homeGoals === awayGoals) {
-      const pHome = 1 / (1 + Math.pow(10, (awayStr - homeStr) / 400));
+      const pHome = homeAttackShare(homeStr, awayStr);
       if (Math.random() < pHome) homeGoals += 1;
       else awayGoals += 1;
     }
@@ -256,10 +286,6 @@ const SimEngine = (function () {
     }
   }
 
-  /**
-   * Полный прогон турнира.
-   * @param {function} buildBracket — функция из UI: (qualifiers) => rounds
-   */
   function runTournament(buildBracket) {
     if (typeof WORLD_CUP_2026_CONFIG === 'undefined') {
       throw new Error('WORLD_CUP_2026_CONFIG не загружен');

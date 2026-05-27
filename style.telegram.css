@@ -213,12 +213,70 @@ html.tg-webapp .groups-grid {
   font-weight: 500;
 }
 
+.tg-share-open-button {
+  margin-left: auto;
+  color: var(--text);
+  border-color: rgba(251, 191, 36, 0.6);
+  background: rgba(251, 191, 36, 0.14);
+  font-weight: 600;
+}
+
+.tg-share-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.tg-share-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.65);
+}
+
+.tg-share-panel {
+  position: relative;
+  width: min(460px, calc(100% - 20px));
+  margin: 10px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.tg-share-title {
+  font-size: 26px;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.tg-share-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.tg-share-btn {
+  height: 52px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(15, 23, 42, 0.95);
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.tg-stage-tabs,
 .tg-easy-tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
+.tg-stage-tab,
 .tg-easy-tab {
   flex: 1 1 calc(50% - 6px);
   min-width: 0;
@@ -231,6 +289,7 @@ html.tg-webapp .groups-grid {
   cursor: pointer;
 }
 
+.tg-stage-tab--active,
 .tg-easy-tab--active {
   color: var(--text);
   border-color: rgba(34, 197, 94, 0.55);
@@ -246,29 +305,129 @@ html.tg-webapp .groups-grid {
   cursor: default;
 }
 
-.team-group-stats {
-  display: inline-flex;
+.group-table {
+  width: 100%;
+  --gt-cols: 22px minmax(0, 1fr) 30px 30px 30px 34px 30px;
+  --gt-gap: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 4px;
+}
+
+.group-table-head,
+.group-table .group-table-row {
+  display: grid;
+  grid-template-columns: var(--gt-cols);
   align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
+  column-gap: var(--gt-gap);
+  width: 100%;
+}
+
+/* .team-card { display:flex; gap:6px } не должен ломать сетку лёгкого режима */
+.group-table .group-table-row.team-card {
+  display: grid;
+  cursor: default;
+  touch-action: auto;
+  row-gap: 0;
+}
+
+.group-table-head {
   font-size: 10px;
+  color: var(--muted);
+  padding: 0 0 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.group-table-head .col-stat,
+.group-table-head .col-squad {
+  justify-self: center;
+  text-align: center;
+  line-height: 1;
+}
+
+.group-table-row .team-position {
+  text-align: center;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--muted);
+}
+
+.group-table-row .standings-team {
+  flex: none;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 4px 8px;
+  box-sizing: border-box;
+}
+
+.group-table .team-name {
+  overflow: visible;
+  text-overflow: unset;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.group-table-row .team-stat {
+  justify-self: center;
+  min-width: 0;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
   color: var(--muted);
 }
 
-.team-group-stats--empty {
-  opacity: 0.45;
-  letter-spacing: 0.08em;
+.group-table-row .team-squad-btn {
+  justify-self: center;
+  width: 28px;
+  height: 28px;
+  font-size: 12px;
 }
 
-.team-stat {
-  min-width: 18px;
+.thirds-qualified-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.thirds-qualified-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(31, 41, 55, 0.9);
+  background: rgba(15, 23, 42, 0.75);
+}
+
+.thirds-qualified-row .team-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.thirds-qualified-num {
+  width: 18px;
   text-align: center;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .thirds-panel--readonly .third-pill {
   cursor: default;
   pointer-events: none;
+}
+
+html.tg-webapp .group-table-row .team-stat {
+  color: rgba(200, 220, 255, 0.82);
+}
+
+html.tg-webapp .thirds-qualified-row {
+  border-color: rgba(92, 139, 255, 0.4);
+  background: linear-gradient(180deg, rgba(10, 30, 110, 0.75), rgba(8, 19, 75, 0.8));
 }
 
 .third-pill-muted {
@@ -283,13 +442,13 @@ html.tg-webapp .groups-grid {
 
 .tg-ko-match--scored {
   gap: 2px;
-  padding: 4px 6px;
+  padding: 2px 4px;
 }
 
 .tg-ko-team-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .tg-ko-team--readonly {
@@ -317,6 +476,129 @@ html.tg-webapp .groups-grid {
   margin-top: 6px;
   font-size: 12px;
   color: var(--muted);
+}
+
+.tg-hard-group-matches {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tg-hard-matchday {
+  border-radius: 10px;
+  padding: 8px;
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.tg-hard-matchday-title {
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.tg-hard-match-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px 10px 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.tg-hard-team {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.tg-hard-team .team-name {
+  min-width: 0;
+}
+
+.tg-hard-team--away {
+  justify-content: flex-end;
+}
+
+.tg-hard-dash {
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.tg-hard-score-input,
+.tg-ko-score-input,
+.tg-ko-pen-input {
+  width: 100%;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: rgba(15, 23, 42, 0.95);
+  color: var(--text);
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+  padding: 0 2px;
+}
+
+.tg-hard-score-input:focus,
+.tg-ko-score-input:focus,
+.tg-ko-pen-input:focus {
+  border-color: var(--accent);
+}
+
+.tg-ko-score-input,
+.tg-ko-pen-input {
+  flex: 0 0 34px;
+}
+
+.tg-ko-pen-input--inline {
+  flex-basis: 30px;
+  height: 24px;
+  font-size: 11px;
+  opacity: 0.92;
+}
+
+.tg-ko-pen-input--hidden {
+  display: none;
+}
+
+.tg-ko-pen-badge {
+  flex: 0 0 auto;
+  min-width: 10px;
+  text-align: center;
+  font-size: 10px;
+  color: var(--muted);
+  opacity: 0.9;
+}
+
+.tg-ko-match--editable .tg-ko-team-row {
+  min-width: 0;
+}
+
+.tg-ko-match--editable .tg-ko-team {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tg-ko-pens-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.tg-ko-pens-label {
+  margin-right: 2px;
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
 }
 
 .tg-ko-finalist--readonly {
@@ -491,16 +773,59 @@ html.tg-webapp .groups-grid {
   margin-top: 18px;
 }
 
+.tg-level-screen--compact {
+  gap: 10px;
+}
+
+.tg-level-screen--compact .tg-ko-wrapper {
+  margin-top: 4px;
+}
+
+.tg-level-screen--compact .groups-grid {
+  margin-top: 0;
+}
+
+.tg-ko-team-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tg-ko-team-row .tg-ko-team {
+  flex: 1;
+  min-width: 0;
+}
+
+.team-squad-btn--ko {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  font-size: 10px;
+  line-height: 1;
+  padding: 0;
+  border-radius: 6px;
+}
+
+.team-squad-btn--spacer {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .tg-ko-grid {
   margin-top: 8px;
   display: flex;
-  gap: 8px;
+  gap: 14px;
   overflow-x: auto;
   padding-bottom: 4px;
 }
 
 .tg-ko-column {
-  min-width: 130px;
+  flex: 0 0 auto;
+  width: min(72vw, 236px);
+  min-width: min(72vw, 236px);
+  max-width: min(72vw, 236px);
+  overflow: hidden;
 }
 
 .tg-ko-column-title {
@@ -510,7 +835,7 @@ html.tg-webapp .groups-grid {
 }
 
 .tg-ko-bracket-col {
-  --ko-row-h: 26px;
+  --ko-row-h: 22px;
   --ko-gap: 6px;
   display: grid;
   grid-auto-rows: var(--ko-row-h);
@@ -520,14 +845,46 @@ html.tg-webapp .groups-grid {
   align-content: start;
 }
 
+/* Сложный режим: больше высота карточек и вертикальные промежутки */
+.tg-ko-grid--hard .tg-ko-bracket-col {
+  --ko-row-h: 30px;
+  --ko-gap: 22px;
+  height: auto;
+  min-height: calc(var(--ko-rows, 16) * var(--ko-row-h) + (var(--ko-rows, 16) - 1) * var(--ko-gap) + 8px);
+  padding-bottom: 8px;
+  overflow: visible;
+}
+
+.tg-ko-grid--hard .tg-ko-match {
+  padding: 4px 6px;
+  gap: 2px;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.tg-ko-grid--hard .tg-ko-team {
+  min-height: 24px;
+}
+
+.tg-ko-grid--hard .tg-ko-column {
+  overflow: visible;
+}
+
 .tg-ko-match {
   border-radius: 10px;
   background: rgba(15, 23, 42, 0.9);
   border: 1px solid rgba(31, 41, 55, 0.9);
-  padding: 4px 6px;
+  padding: 2px 4px;
   display: flex;
   flex-direction: column;
+  justify-content: flex-start;
   gap: 2px;
+  height: 100%;
+  min-height: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .tg-ko-team {
@@ -537,10 +894,16 @@ html.tg-webapp .groups-grid {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 2px;
+  padding: 1px 2px;
   border-radius: 6px;
   cursor: pointer;
   font-size: 12px;
+  min-height: 20px;
+}
+
+.tg-ko-team .flag-img {
+  width: 20px;
+  height: 14px;
 }
 
 /* Финалы (как у конкурента, но в нашем стиле) */
@@ -634,6 +997,12 @@ html.tg-webapp .groups-grid {
   padding-top: 8px;
 }
 
+.tg-hard-screen .tg-ko-finals-bottom {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
 .tg-ko-finals-match {
   border-radius: 12px;
   background: rgba(15, 23, 42, 0.65);
@@ -659,15 +1028,18 @@ html.tg-webapp .groups-grid {
 
 @media (max-width: 479px) {
   .tg-ko-bracket-col {
-    --ko-row-h: 24px;
+    --ko-row-h: 22px;
   }
 
   .tg-ko-column {
-    min-width: 0;
+    width: min(72vw, 236px);
+    min-width: min(72vw, 236px);
+    max-width: min(72vw, 236px);
   }
 
   /* На телефоне — остаётся сетка-скобка, но листаем колонками (snap) */
   .tg-ko-grid--bracket {
+    gap: 14px;
     overflow-x: auto;
     scroll-snap-type: x mandatory;
     scroll-padding-left: 12px;
@@ -681,8 +1053,10 @@ html.tg-webapp .groups-grid {
   }
 
   .tg-ko-grid--bracket .tg-ko-column {
-    flex: 0 0 min(92vw, 340px);
-    width: min(92vw, 340px);
+    flex: 0 0 min(72vw, 236px);
+    width: min(72vw, 236px);
+    min-width: min(72vw, 236px);
+    max-width: min(72vw, 236px);
     scroll-snap-align: start;
     scroll-snap-stop: always;
   }
@@ -824,11 +1198,45 @@ html.tg-webapp .tg-stage-nav {
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.32);
 }
 
+/* Telegram: плавное горизонтальное листание колонок сетки (normal + easy) */
+html.tg-webapp .tg-level-screen--compact {
+  gap: 8px;
+}
+
+html.tg-webapp .tg-ko-grid--bracket {
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding-left: 8px;
+  scroll-padding-right: 8px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  gap: 14px;
+}
+
+html.tg-webapp .tg-ko-grid--bracket::-webkit-scrollbar {
+  height: 0;
+}
+
+html.tg-webapp .tg-ko-grid--bracket .tg-ko-column {
+  flex: 0 0 min(72vw, 236px);
+  width: min(72vw, 236px);
+  min-width: min(72vw, 236px);
+  max-width: min(72vw, 236px);
+  overflow: hidden;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+html.tg-webapp .tg-ko-bracket-col {
+  --ko-row-h: 22px;
+}
+
 html.tg-webapp .tg-simulate-button {
   border-color: rgba(61, 223, 255, 0.75);
   background: linear-gradient(135deg, rgba(20, 120, 255, 0.28), rgba(56, 255, 233, 0.18));
 }
 
+html.tg-webapp .tg-stage-tab--active,
 html.tg-webapp .tg-easy-tab--active {
   border-color: rgba(61, 223, 255, 0.75);
   background: linear-gradient(135deg, rgba(25, 116, 230, 0.32), rgba(40, 231, 255, 0.22));
